@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { ChevronLeft, ChevronRight, Save, Eye, Plus, X } from 'lucide-react'
-import { AuditTemplate, Section, Question, saveTemplate, publishTemplate, fetchTemplateCategories } from '../../lib/supabase'
+import { AuditTemplate, Section, Question, saveTemplateWithRealtime, publishTemplateWithRealtime, fetchTemplateCategories } from '../../lib/supabase'
 import { ConditionalQuestion, EnhancedSection } from '../../lib/conditionalLogic'
 import ConditionalLogicBuilder from './ConditionalLogicBuilder'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface TemplateWizardProps {
   onClose: () => void
@@ -11,6 +12,7 @@ interface TemplateWizardProps {
 }
 
 const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTemplateCreated }) => {
+  const { user } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [templateData, setTemplateData] = useState<Partial<AuditTemplate>>({
     template_id: template?.template_id,
@@ -31,6 +33,21 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
   })
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<any[]>([])
+
+  // Check if user is authenticated
+  if (!user) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6">
+          <h2 className="text-xl font-bold mb-4">Authentication Required</h2>
+          <p className="text-gray-600 mb-4">Please sign in to create templates.</p>
+          <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded-md">
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   React.useEffect(() => {
     loadCategories()
@@ -69,7 +86,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
   const handleSaveDraft = async () => {
     setIsLoading(true)
     try {
-      const { data, error } = await saveTemplate({
+      const { data, error } = await saveTemplateWithRealtime({
         ...templateData,
         is_published: false
       })
@@ -98,7 +115,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
     setIsLoading(true)
     try {
       // First save the template
-      const { data: savedTemplate, error: saveError } = await saveTemplate({
+      const { data: savedTemplate, error: saveError } = await saveTemplateWithRealtime({
         ...templateData,
         is_published: false
       })
@@ -107,7 +124,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
       
       if (savedTemplate) {
         // Then publish it
-        const { data: publishedTemplate, error: publishError } = await publishTemplate(savedTemplate.template_id)
+        const { data: publishedTemplate, error: publishError } = await publishTemplateWithRealtime(savedTemplate.template_id)
         
         if (publishError) throw publishError
         

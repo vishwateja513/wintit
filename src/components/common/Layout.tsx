@@ -1,5 +1,8 @@
 import React from 'react'
-import { Building2, Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
+import { Building2, Users, FileText, BarChart3, Settings, LogOut, User, Wifi, WifiOff } from 'lucide-react'
+import { useAuth } from '../../contexts/AuthContext'
+import { useState, useEffect } from 'react'
+import { testSupabaseConnection } from '../../lib/supabase'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -8,6 +11,9 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => {
+  const { user, profile, signOut } = useAuth()
+  const [isConnected, setIsConnected] = useState(true)
+  
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'templates', label: 'Templates', icon: FileText },
@@ -16,6 +22,26 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
     { id: 'users', label: 'Users', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
   ]
+
+  useEffect(() => {
+    const checkConnection = async () => {
+      const { connected } = await testSupabaseConnection()
+      setIsConnected(connected)
+    }
+    
+    checkConnection()
+    const interval = setInterval(checkConnection, 30000) // Check every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleSignOut = async () => {
+    await signOut()
+  }
+
+  const getUserInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -26,15 +52,48 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
             <div className="flex items-center">
               <Building2 className="h-8 w-8 text-blue-600" />
               <h1 className="ml-2 text-xl font-bold text-gray-900">Retail Execution Audit</h1>
+              
+              {/* Connection Status */}
+              <div className="ml-4 flex items-center">
+                {isConnected ? (
+                  <div className="flex items-center text-green-600">
+                    <Wifi className="h-4 w-4 mr-1" />
+                    <span className="text-xs font-medium">Connected</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center text-red-600">
+                    <WifiOff className="h-4 w-4 mr-1" />
+                    <span className="text-xs font-medium">Disconnected</span>
+                  </div>
+                )}
+              </div>
             </div>
+            
             <div className="flex items-center space-x-4">
+              {/* User Profile */}
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-medium">JD</span>
+                  <span className="text-white text-xs font-medium">
+                    {profile?.name ? getUserInitials(profile.name) : <User className="h-4 w-4" />}
+                  </span>
                 </div>
-                <span className="text-sm font-medium text-gray-700">John Doe</span>
+                <div className="hidden sm:block">
+                  <span className="text-sm font-medium text-gray-700">
+                    {profile?.name || user?.email}
+                  </span>
+                  {profile?.role && (
+                    <span className="block text-xs text-gray-500 capitalize">
+                      {profile.role}
+                    </span>
+                  )}
+                </div>
               </div>
-              <button className="text-gray-500 hover:text-gray-700 transition-colors">
+              
+              <button 
+                onClick={handleSignOut}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+                title="Sign Out"
+              >
                 <LogOut className="h-5 w-5" />
               </button>
             </div>

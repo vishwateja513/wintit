@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Plus, Edit, Copy, Trash2, Eye, FileText, Calendar, User } from 'lucide-react'
-import { AuditTemplate, fetchTemplates } from '../../lib/supabase'
+import { AuditTemplate, fetchTemplatesWithRealtime, subscribeToTemplates } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface TemplatesListProps {
   onCreateTemplate: () => void
@@ -8,6 +9,7 @@ interface TemplatesListProps {
 }
 
 const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTemplateUpdated }) => {
+  const { user } = useAuth()
   const [templates, setTemplates] = useState<AuditTemplate[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -16,12 +18,33 @@ const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTempl
 
   React.useEffect(() => {
     loadTemplates()
+    
+    // Set up real-time subscription
+    const subscription = subscribeToTemplates((payload) => {
+      console.log('Real-time template update:', payload)
+      
+      if (payload.eventType === 'INSERT') {
+        setTemplates(prev => [payload.new, ...prev])
+      } else if (payload.eventType === 'UPDATE') {
+        setTemplates(prev => prev.map(template => 
+          template.template_id === payload.new.template_id ? payload.new : template
+        ))
+      } else if (payload.eventType === 'DELETE') {
+        setTemplates(prev => prev.filter(template => 
+          template.template_id !== payload.old.template_id
+        ))
+      }
+    })
+    
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [])
 
   const loadTemplates = async () => {
     try {
       setLoading(true)
-      const { data, error } = await fetchTemplates()
+      const { data, error } = await fetchTemplatesWithRealtime()
       if (error) throw error
       setTemplates(data || [])
     } catch (error) {
@@ -41,6 +64,11 @@ const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTempl
   })
 
   const handleDeleteTemplate = (templateId: string) => {
+    if (!window.confirm('Are you sure you want to delete this template?')) {
+      return
+    }
+    
+    // TODO: Implement delete functionality
     setTemplates(templates.filter(t => t.template_id !== templateId))
   }
 
@@ -55,12 +83,22 @@ const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTempl
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
+      
+      // TODO: Save to Supabase
       setTemplates([...templates, newTemplate])
     }
   }
 
   return (
     <div className="p-6">
+      {!user && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-yellow-800">
+            Please sign in to manage templates.
+          </p>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Audit Templates</h2>
@@ -68,6 +106,7 @@ const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTempl
         </div>
         <button
           onClick={onCreateTemplate}
+          disabled={!user}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4 mr-2 inline" />
@@ -141,6 +180,10 @@ const TemplatesList: React.FC<TemplatesListProps> = ({ onCreateTemplate, onTempl
                   </div>
                   <div className="flex items-center text-sm text-gray-500">
                     <User className="h-4 w-4 mr-2" />
+                    Created by: {template.user_profiles?.name || 'Unknown'}
+                  </div>
+                  <div className="flex items-center text-sm text-gray-500">
+                    <FileText className="h-4 w-4 mr-2" />
                     Category: {template.template_categories?.name || 'Uncategorized'}
                   </div>
                 </div>
