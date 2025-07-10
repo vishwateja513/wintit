@@ -1,27 +1,50 @@
 import React, { useState } from 'react'
 import { ChevronLeft, ChevronRight, Save, Eye, Plus, X } from 'lucide-react'
-import { Template, Section, Question } from '../../lib/supabase'
+import { AuditTemplate, Section, Question, saveTemplate, publishTemplate, fetchTemplateCategories } from '../../lib/supabase'
 import { ConditionalQuestion, EnhancedSection } from '../../lib/conditionalLogic'
 import ConditionalLogicBuilder from './ConditionalLogicBuilder'
 
 interface TemplateWizardProps {
   onClose: () => void
-  template?: Template
+  template?: AuditTemplate
+  onTemplateCreated?: (template: AuditTemplate) => void
 }
 
-const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) => {
+const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTemplateCreated }) => {
   const [currentStep, setCurrentStep] = useState(1)
-  const [templateData, setTemplateData] = useState<Partial<Template>>({
+  const [templateData, setTemplateData] = useState<Partial<AuditTemplate>>({
+    template_id: template?.template_id,
     name: template?.name || '',
     description: template?.description || '',
-    category: template?.category || '',
+    category_id: template?.category_id || '',
+    version: template?.version || 1,
     sections: template?.sections || [] as EnhancedSection[],
+    conditional_logic: template?.conditional_logic || {},
     scoring_rules: template?.scoring_rules || {
       weights: {},
       threshold: 80,
       critical_questions: []
-    }
+    },
+    validation_rules: template?.validation_rules || {},
+    is_published: template?.is_published || false,
+    is_active: template?.is_active !== false
   })
+  const [isLoading, setIsLoading] = useState(false)
+  const [categories, setCategories] = useState<any[]>([])
+
+  React.useEffect(() => {
+    loadCategories()
+  }, [])
+
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await fetchTemplateCategories()
+      if (error) throw error
+      setCategories(data || [])
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
 
   const steps = [
     { id: 1, title: 'Basic Information', subtitle: 'Set up template details' },
@@ -43,10 +66,69 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) =>
     }
   }
 
+  const handleSaveDraft = async () => {
+    setIsLoading(true)
+    try {
+      const { data, error } = await saveTemplate({
+        ...templateData,
+        is_published: false
+      })
+      
+      if (error) throw error
+      
+      if (data) {
+        setTemplateData(prev => ({ ...prev, template_id: data.template_id }))
+        onTemplateCreated?.(data)
+        alert('Template saved as draft successfully!')
+      }
+    } catch (error) {
+      console.error('Error saving template:', error)
+      alert('Failed to save template. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handlePublishTemplate = async () => {
+    if (!templateData.name || !templateData.sections || templateData.sections.length === 0) {
+      alert('Please complete the template before publishing.')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      // First save the template
+      const { data: savedTemplate, error: saveError } = await saveTemplate({
+        ...templateData,
+        is_published: false
+      })
+      
+      if (saveError) throw saveError
+      
+      if (savedTemplate) {
+        // Then publish it
+        const { data: publishedTemplate, error: publishError } = await publishTemplate(savedTemplate.template_id)
+        
+        if (publishError) throw publishError
+        
+        if (publishedTemplate) {
+          onTemplateCreated?.(publishedTemplate)
+          alert('Template published successfully!')
+          onClose()
+        }
+      }
+    } catch (error) {
+      console.error('Error publishing template:', error)
+      alert('Failed to publish template. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
-        return <BasicInformation templateData={templateData} setTemplateData={setTemplateData} />
+        return <BasicInformation templateData={templateData} setTemplateData={setTemplateData} categories={categories} />
       case 2:
         return <CreateSections templateData={templateData} setTemplateData={setTemplateData} />
       case 3:
@@ -54,7 +136,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) =>
       case 4:
         return <ConfigureLogic templateData={templateData} setTemplateData={setTemplateData} />
       case 5:
-        return <ScoringAndPublish templateData={templateData} setTemplateData={setTemplateData} />
+        return <ScoringAndPublish templateData={templateData} setTemplateData={setTemplateData} onPublish={handlePublishTemplate} isLoading={isLoading} />
       default:
         return null
     }
@@ -123,12 +205,17 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) =>
             <button
               onClick={onClose}
               className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              disabled={isLoading}
             >
               Cancel
             </button>
-            <button className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+            <button 
+              onClick={handleSaveDraft}
+              disabled={isLoading}
+              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
               <Save className="h-4 w-4 mr-2 inline" />
-              Save Draft
+              {isLoading ? 'Saving...' : 'Save Draft'}
             </button>
           </div>
           <div className="flex items-center space-x-3">
@@ -148,7 +235,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) =>
               onClick={handleNext}
               disabled={currentStep === 5}
               className={`px-4 py-2 rounded-md transition-colors ${
-                currentStep === 5
+                currentStep === 5 || isLoading
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                   : 'text-white bg-blue-600 hover:bg-blue-700'
               }`}
@@ -165,17 +252,10 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template }) =>
 
 // Step 1: Basic Information
 const BasicInformation: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
-}> = ({ templateData, setTemplateData }) => {
-  const categories = [
-    'Merchandising',
-    'Stock Management',
-    'Quality Control',
-    'Competitor Analysis',
-    'Pricing Compliance',
-    'Brand Visibility'
-  ]
+  templateData: Partial<AuditTemplate>
+  setTemplateData: (data: Partial<AuditTemplate>) => void
+  categories: any[]
+}> = ({ templateData, setTemplateData, categories }) => {
 
   return (
     <div className="space-y-6">
@@ -199,13 +279,13 @@ const BasicInformation: React.FC<{
               Category
             </label>
             <select
-              value={templateData.category || ''}
-              onChange={(e) => setTemplateData({ ...templateData, category: e.target.value })}
+              value={templateData.category_id || ''}
+              onChange={(e) => setTemplateData({ ...templateData, category_id: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select category</option>
               {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat.category_id} value={cat.category_id}>{cat.name}</option>
               ))}
             </select>
           </div>
@@ -229,8 +309,8 @@ const BasicInformation: React.FC<{
 
 // Step 2: Create Sections
 const CreateSections: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
+  templateData: Partial<AuditTemplate>
+  setTemplateData: (data: Partial<AuditTemplate>) => void
 }> = ({ templateData, setTemplateData }) => {
   const addSection = () => {
     const newSection: Section = {
@@ -339,8 +419,8 @@ const CreateSections: React.FC<{
 
 // Step 3: Add Questions
 const AddQuestions: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
+  templateData: Partial<AuditTemplate>
+  setTemplateData: (data: Partial<AuditTemplate>) => void
 }> = ({ templateData, setTemplateData }) => {
   const [selectedSectionId, setSelectedSectionId] = useState<string>('')
 
@@ -549,8 +629,8 @@ const AddQuestions: React.FC<{
 
 // Step 4: Configure Logic
 const ConfigureLogic: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
+  templateData: Partial<AuditTemplate>
+  setTemplateData: (data: Partial<AuditTemplate>) => void
 }> = ({ templateData, setTemplateData }) => {
   const [selectedSectionId, setSelectedSectionId] = useState<string>('')
 
@@ -609,9 +689,11 @@ const ConfigureLogic: React.FC<{
 
 // Step 5: Scoring and Publish
 const ScoringAndPublish: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
-}> = ({ templateData, setTemplateData }) => {
+  templateData: Partial<AuditTemplate>
+  setTemplateData: (data: Partial<AuditTemplate>) => void
+  onPublish: () => void
+  isLoading: boolean
+}> = ({ templateData, setTemplateData, onPublish, isLoading }) => {
   const [scoringEnabled, setScoringEnabled] = useState(false)
 
   return (
@@ -712,7 +794,9 @@ const ScoringAndPublish: React.FC<{
 
         <div className="flex items-center space-x-4">
           <button className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
-            Publish Template
+            onClick={onPublish}
+            disabled={isLoading}
+            {isLoading ? 'Publishing...' : 'Publish Template'}
           </button>
           <button className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors">
             <Eye className="h-4 w-4 mr-2 inline" />

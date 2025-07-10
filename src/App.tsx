@@ -15,7 +15,13 @@ function App() {
       case 'dashboard':
         return <Dashboard />
       case 'templates':
-        return <TemplatesList onCreateTemplate={() => setShowTemplateWizard(true)} />
+        return <TemplatesList 
+          onCreateTemplate={() => setShowTemplateWizard(true)} 
+          onTemplateUpdated={() => {
+            // Refresh templates list if needed
+            setActiveTab('templates')
+          }}
+        />
       case 'audits':
         return <AuditsList />
       case 'reports':
@@ -54,6 +60,11 @@ function App() {
       {showTemplateWizard && (
         <TemplateWizard 
           onClose={() => setShowTemplateWizard(false)}
+          onTemplateCreated={(template) => {
+            setShowTemplateWizard(false)
+            // Optionally refresh the templates list
+            setActiveTab('templates')
+          }}
         />
       )}
     </div>
