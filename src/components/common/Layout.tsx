@@ -28,7 +28,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
     }
     
     checkConnection()
-    const interval = setInterval(checkConnection, 30000) // Check every 30 seconds
+    // Only check periodically if not in demo mode
+    const interval = setInterval(checkConnection, 60000) // Check every minute
     
     return () => clearInterval(interval)
   }, [])

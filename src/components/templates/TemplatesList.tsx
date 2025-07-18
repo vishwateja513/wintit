@@ -89,10 +89,9 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
     }
     
     try {
-      const { error } = await deleteTemplate(templateId)
-      if (error) throw error
+      // For demo mode, remove from local array
+      setTemplates(prev => prev.filter(t => t.template_id !== templateId))
       
-      // Template will be removed via real-time subscription
       alert('Template deleted successfully!')
     } catch (error) {
       console.error('Error deleting template:', error)
@@ -102,10 +101,11 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
 
   const handleDuplicateTemplate = async (template: Template) => {
     try {
-      const { data, error } = await createTemplate({
+      const { data, error } = await saveTemplate({
         name: `${template.name} (Copy)`,
         description: template.description,
-        category_id: template.category_id,
+        category_id: template.category_id || '',
+        sections: template.sections,
         conditional_logic: template.conditional_logic,
         scoring_rules: template.scoring_rules,
         validation_rules: template.validation_rules,
@@ -114,7 +114,11 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
       
       if (error) throw error
       
-      // Template will be added via real-time subscription
+      // Add to local state for demo mode
+      if (data) {
+        setTemplates(prev => [data, ...prev])
+      }
+      
       alert('Template duplicated successfully!')
     } catch (error) {
       console.error('Error duplicating template:', error)

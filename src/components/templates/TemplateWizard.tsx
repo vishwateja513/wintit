@@ -109,31 +109,21 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   const handleSaveDraft = async () => {
     setIsLoading(true)
     try {
-      let savedTemplate: Template
-
-      if (templateData.id) {
-        // Update existing template
-        const { data, error } = await updateTemplate(templateData.id, {
-          ...templateData,
-          is_published: false
-        })
-        if (error) throw error
-        savedTemplate = data!
-      } else {
-        // Create new template
-        const { data, error } = await createTemplate({
-          ...templateData,
-          is_published: false
-        })
-        if (error) throw error
-        savedTemplate = data!
+      // Prepare template data with sections
+      const templateWithSections = {
+        ...templateData,
+        sections: sections.map(section => ({
+          ...section,
+          questions: questions[section.title || ''] || []
+        })),
+        is_published: false
       }
 
-      // Save sections and questions
-      await saveSectionsAndQuestions(savedTemplate.id)
+      const { data: savedTemplate, error } = await saveTemplate(templateWithSections)
+      if (error) throw error
       
-      setTemplateData(prev => ({ ...prev, id: savedTemplate.id }))
-      onTemplateCreated?.(savedTemplate)
+      setTemplateData(prev => ({ ...prev, template_id: savedTemplate!.template_id }))
+      onTemplateCreated?.(savedTemplate!)
       alert('Template saved as draft successfully!')
     } catch (error) {
       console.error('Error saving template:', error)
@@ -151,30 +141,32 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
 
     setIsLoading(true)
     try {
-      let savedTemplate: Template
+      // First save the template with sections
+      const templateWithSections = {
+        ...templateData,
+        sections: sections.map(section => ({
+          ...section,
+          questions: questions[section.title || ''] || []
+        })),
+        is_published: false
+      }
 
-      if (templateData.id) {
-        // Update and publish existing template
-        const { data, error } = await publishTemplate(templateData.id)
+      let savedTemplate
+      if (templateData.template_id) {
+        const { data, error } = await saveTemplate(templateWithSections)
         if (error) throw error
         savedTemplate = data!
       } else {
-        // Create and publish new template
-        const { data: createdTemplate, error: createError } = await createTemplate({
-          ...templateData,
-          is_published: false
-        })
-        if (createError) throw createError
-        
-        const { data: publishedTemplate, error: publishError } = await publishTemplate(createdTemplate!.id)
-        if (publishError) throw publishError
-        savedTemplate = publishedTemplate!
+        const { data, error } = await saveTemplate(templateWithSections)
+        if (error) throw error
+        savedTemplate = data!
       }
 
-      // Save sections and questions
-      await saveSectionsAndQuestions(savedTemplate.id)
+      // Then publish it
+      const { data: publishedTemplate, error: publishError } = await publishTemplate(savedTemplate.template_id)
+      if (publishError) throw publishError
       
-      onTemplateCreated?.(savedTemplate)
+      onTemplateCreated?.(publishedTemplate!)
       alert('Template published successfully!')
       onClose()
     } catch (error) {
@@ -182,28 +174,6 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
       alert('Failed to publish template. Please try again.')
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const saveSectionsAndQuestions = async (templateId: string) => {
-    // Save sections
-    for (const section of sections) {
-      if (!section.id) {
-        const { data: savedSection, error } = await createTemplateSection({
-          ...section,
-          template_id: templateId
-        })
-        if (error) throw error
-        
-        // Save questions for this section
-        const sectionQuestions = questions[section.title || ''] || []
-        for (const question of sectionQuestions) {
-          await createTemplateQuestion({
-            ...question,
-            section_id: savedSection!.id
-          })
-        }
-      }
     }
   }
 
