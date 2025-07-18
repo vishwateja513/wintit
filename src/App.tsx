@@ -1,16 +1,19 @@
 import React, { useState } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import LoginForm from './components/auth/LoginForm'
 import Layout from './components/common/Layout'
 import Dashboard from './components/dashboard/Dashboard'
 import TemplatesList from './components/templates/TemplatesList'
 import TemplateWizard from './components/templates/TemplateWizard'
 import AuditsList from './components/audits/AuditsList'
 import ReportsView from './components/reports/ReportsView'
+import { Template } from './lib/templates'
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showTemplateWizard, setShowTemplateWizard] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<Template | undefined>(undefined)
 
   if (loading) {
     return (
@@ -23,9 +26,9 @@ const AppContent: React.FC = () => {
     )
   }
 
-  // if (!user) {
-  //   return <LoginForm
-  // }
+  if (!user) {
+    return <LoginForm />
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -34,6 +37,10 @@ const AppContent: React.FC = () => {
       case 'templates':
         return <TemplatesList 
           onCreateTemplate={() => setShowTemplateWizard(true)} 
+          onEditTemplate={(template) => {
+            setEditingTemplate(template)
+            setShowTemplateWizard(true)
+          }}
           onTemplateUpdated={() => {
             // Refresh templates list if needed
             setActiveTab('templates')
@@ -77,8 +84,10 @@ const AppContent: React.FC = () => {
       {showTemplateWizard && (
         <TemplateWizard 
           onClose={() => setShowTemplateWizard(false)}
+          template={editingTemplate}
           onTemplateCreated={(template) => {
             setShowTemplateWizard(false)
+            setEditingTemplate(undefined)
             // Optionally refresh the templates list
             setActiveTab('templates')
           }}

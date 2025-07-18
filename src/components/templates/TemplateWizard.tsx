@@ -1,26 +1,42 @@
-import React, { useState } from 'react'
-import { ChevronLeft, ChevronRight, Save, Eye, Plus, X } from 'lucide-react'
-import { AuditTemplate, Section, Question, saveTemplateWithRealtime, publishTemplateWithRealtime, fetchTemplateCategories } from '../../lib/supabase'
-import { ConditionalQuestion, EnhancedSection } from '../../lib/conditionalLogic'
-import ConditionalLogicBuilder from './ConditionalLogicBuilder'
+import React, { useState, useEffect } from 'react'
+import { ChevronLeft, ChevronRight, Save, X, Plus } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { 
+  Template, 
+  TemplateCategory, 
+  TemplateSection, 
+  TemplateQuestion,
+  createTemplate,
+  updateTemplate,
+  publishTemplate,
+  fetchTemplateCategories,
+  createTemplateSection,
+  createTemplateQuestion,
+  fetchTemplateById
+} from '../../lib/templates'
 
 interface TemplateWizardProps {
   onClose: () => void
-  template?: AuditTemplate
-  onTemplateCreated?: (template: AuditTemplate) => void
+  template?: Template
+  onTemplateCreated?: (template: Template) => void
 }
 
-const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTemplateCreated }) => {
+const TemplateWizard: React.FC<TemplateWizardProps> = ({ 
+  onClose, 
+  template, 
+  onTemplateCreated 
+}) => {
   const { user } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
-  const [templateData, setTemplateData] = useState<Partial<AuditTemplate>>({
-    template_id: template?.template_id,
+  const [isLoading, setIsLoading] = useState(false)
+  const [categories, setCategories] = useState<TemplateCategory[]>([])
+  
+  const [templateData, setTemplateData] = useState<Partial<Template>>({
+    id: template?.id,
     name: template?.name || '',
     description: template?.description || '',
     category_id: template?.category_id || '',
     version: template?.version || 1,
-    sections: template?.sections || [] as EnhancedSection[],
     conditional_logic: template?.conditional_logic || {},
     scoring_rules: template?.scoring_rules || {
       weights: {},
@@ -31,10 +47,48 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
     is_published: template?.is_published || false,
     is_active: template?.is_active !== false
   })
-  const [isLoading, setIsLoading] = useState(false)
-  const [categories, setCategories] = useState<any[]>([])
 
-  // Check if user is authenticated
+  const [sections, setSections] = useState<Partial<TemplateSection>[]>([])
+  const [questions, setQuestions] = useState<Record<string, Partial<TemplateQuestion>[]>>({})
+
+  useEffect(() => {
+    loadCategories()
+    if (template?.id) {
+      loadTemplateDetails(template.id)
+    }
+  }, [template])
+
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await fetchTemplateCategories()
+      if (error) throw error
+      setCategories(data || [])
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
+  const loadTemplateDetails = async (templateId: string) => {
+    try {
+      const { data, error } = await fetchTemplateById(templateId)
+      if (error) throw error
+      
+      if (data) {
+        setTemplateData(data)
+        setSections(data.sections || [])
+        
+        // Convert sections and questions to local state
+        const questionsMap: Record<string, Partial<TemplateQuestion>[]> = {}
+        data.sections?.forEach(section => {
+          questionsMap[section.id] = section.questions || []
+        })
+        setQuestions(questionsMap)
+      }
+    } catch (error) {
+      console.error('Error loading template details:', error)
+    }
+  }
+
   if (!user) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -49,30 +103,15 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
     )
   }
 
-  React.useEffect(() => {
-    loadCategories()
-  }, [])
-
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await fetchTemplateCategories()
-      if (error) throw error
-      setCategories(data || [])
-    } catch (error) {
-      console.error('Error loading categories:', error)
-    }
-  }
-
   const steps = [
     { id: 1, title: 'Basic Information', subtitle: 'Set up template details' },
     { id: 2, title: 'Create Sections', subtitle: 'Organize your audit structure' },
     { id: 3, title: 'Add Questions', subtitle: 'Define audit questions' },
-    { id: 4, title: 'Configure Logic', subtitle: 'Set conditional rules' },
-    { id: 5, title: 'Scoring & Publish', subtitle: 'Finalize and deploy' }
+    { id: 4, title: 'Review & Publish', subtitle: 'Finalize and deploy' }
   ]
 
   const handleNext = () => {
-    if (currentStep < 5) {
+    if (currentStep < 4) {
       setCurrentStep(currentStep + 1)
     }
   }
@@ -86,18 +125,32 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
   const handleSaveDraft = async () => {
     setIsLoading(true)
     try {
-      const { data, error } = await saveTemplateWithRealtime({
-        ...templateData,
-        is_published: false
-      })
-      
-      if (error) throw error
-      
-      if (data) {
-        setTemplateData(prev => ({ ...prev, template_id: data.template_id }))
-        onTemplateCreated?.(data)
-        alert('Template saved as draft successfully!')
+      let savedTemplate: Template
+
+      if (templateData.id) {
+        // Update existing template
+        const { data, error } = await updateTemplate(templateData.id, {
+          ...templateData,
+          is_published: false
+        })
+        if (error) throw error
+        savedTemplate = data!
+      } else {
+        // Create new template
+        const { data, error } = await createTemplate({
+          ...templateData,
+          is_published: false
+        })
+        if (error) throw error
+        savedTemplate = data!
       }
+
+      // Save sections and questions
+      await saveSectionsAndQuestions(savedTemplate.id)
+      
+      setTemplateData(prev => ({ ...prev, id: savedTemplate.id }))
+      onTemplateCreated?.(savedTemplate)
+      alert('Template saved as draft successfully!')
     } catch (error) {
       console.error('Error saving template:', error)
       alert('Failed to save template. Please try again.')
@@ -107,33 +160,39 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
   }
 
   const handlePublishTemplate = async () => {
-    if (!templateData.name || !templateData.sections || templateData.sections.length === 0) {
+    if (!templateData.name || sections.length === 0) {
       alert('Please complete the template before publishing.')
       return
     }
 
     setIsLoading(true)
     try {
-      // First save the template
-      const { data: savedTemplate, error: saveError } = await saveTemplateWithRealtime({
-        ...templateData,
-        is_published: false
-      })
-      
-      if (saveError) throw saveError
-      
-      if (savedTemplate) {
-        // Then publish it
-        const { data: publishedTemplate, error: publishError } = await publishTemplateWithRealtime(savedTemplate.template_id)
+      let savedTemplate: Template
+
+      if (templateData.id) {
+        // Update and publish existing template
+        const { data, error } = await publishTemplate(templateData.id)
+        if (error) throw error
+        savedTemplate = data!
+      } else {
+        // Create and publish new template
+        const { data: createdTemplate, error: createError } = await createTemplate({
+          ...templateData,
+          is_published: false
+        })
+        if (createError) throw createError
         
+        const { data: publishedTemplate, error: publishError } = await publishTemplate(createdTemplate!.id)
         if (publishError) throw publishError
-        
-        if (publishedTemplate) {
-          onTemplateCreated?.(publishedTemplate)
-          alert('Template published successfully!')
-          onClose()
-        }
+        savedTemplate = publishedTemplate!
       }
+
+      // Save sections and questions
+      await saveSectionsAndQuestions(savedTemplate.id)
+      
+      onTemplateCreated?.(savedTemplate)
+      alert('Template published successfully!')
+      onClose()
     } catch (error) {
       console.error('Error publishing template:', error)
       alert('Failed to publish template. Please try again.')
@@ -142,18 +201,55 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
     }
   }
 
+  const saveSectionsAndQuestions = async (templateId: string) => {
+    // Save sections
+    for (const section of sections) {
+      if (!section.id) {
+        const { data: savedSection, error } = await createTemplateSection({
+          ...section,
+          template_id: templateId
+        })
+        if (error) throw error
+        
+        // Save questions for this section
+        const sectionQuestions = questions[section.title || ''] || []
+        for (const question of sectionQuestions) {
+          await createTemplateQuestion({
+            ...question,
+            section_id: savedSection!.id
+          })
+        }
+      }
+    }
+  }
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
-        return <BasicInformation templateData={templateData} setTemplateData={setTemplateData} categories={categories} />
+        return <BasicInformation 
+          templateData={templateData} 
+          setTemplateData={setTemplateData} 
+          categories={categories} 
+        />
       case 2:
-        return <CreateSections templateData={templateData} setTemplateData={setTemplateData} />
+        return <CreateSections 
+          sections={sections} 
+          setSections={setSections} 
+        />
       case 3:
-        return <AddQuestions templateData={templateData} setTemplateData={setTemplateData} />
+        return <AddQuestions 
+          sections={sections} 
+          questions={questions} 
+          setQuestions={setQuestions} 
+        />
       case 4:
-        return <ConfigureLogic templateData={templateData} setTemplateData={setTemplateData} />
-      case 5:
-        return <ScoringAndPublish templateData={templateData} setTemplateData={setTemplateData} onPublish={handlePublishTemplate} isLoading={isLoading} />
+        return <ReviewAndPublish 
+          templateData={templateData} 
+          sections={sections} 
+          questions={questions}
+          onPublish={handlePublishTemplate} 
+          isLoading={isLoading} 
+        />
       default:
         return null
     }
@@ -166,9 +262,11 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Template Creation Wizard</h2>
+              <h2 className="text-2xl font-bold">
+                {template ? 'Edit Template' : 'Create Template'}
+              </h2>
               <p className="text-blue-100 mt-1">
-                Step {currentStep} of 5: {steps[currentStep - 1].subtitle}
+                Step {currentStep} of 4: {steps[currentStep - 1].subtitle}
               </p>
             </div>
             <button
@@ -229,9 +327,9 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
             <button 
               onClick={handleSaveDraft}
               disabled={isLoading}
-              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center"
             >
-              <Save className="h-4 w-4 mr-2 inline" />
+              <Save className="h-4 w-4 mr-2" />
               {isLoading ? 'Saving...' : 'Save Draft'}
             </button>
           </div>
@@ -239,26 +337,26 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
             <button
               onClick={handlePrevious}
               disabled={currentStep === 1}
-              className={`px-4 py-2 border border-gray-300 rounded-md transition-colors ${
+              className={`px-4 py-2 border border-gray-300 rounded-md transition-colors flex items-center ${
                 currentStep === 1
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                   : 'text-gray-700 bg-white hover:bg-gray-50'
               }`}
             >
-              <ChevronLeft className="h-4 w-4 mr-2 inline" />
+              <ChevronLeft className="h-4 w-4 mr-2" />
               Previous
             </button>
             <button
               onClick={handleNext}
-              disabled={currentStep === 5}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                currentStep === 5 || isLoading
+              disabled={currentStep === 4}
+              className={`px-4 py-2 rounded-md transition-colors flex items-center ${
+                currentStep === 4 || isLoading
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                   : 'text-white bg-blue-600 hover:bg-blue-700'
               }`}
             >
               Next
-              <ChevronRight className="h-4 w-4 ml-2 inline" />
+              <ChevronRight className="h-4 w-4 ml-2" />
             </button>
           </div>
         </div>
@@ -267,13 +365,12 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({ onClose, template, onTe
   )
 }
 
-// Step 1: Basic Information
+// Step Components
 const BasicInformation: React.FC<{
-  templateData: Partial<AuditTemplate>
-  setTemplateData: (data: Partial<AuditTemplate>) => void
-  categories: any[]
+  templateData: Partial<Template>
+  setTemplateData: (data: Partial<Template>) => void
+  categories: TemplateCategory[]
 }> = ({ templateData, setTemplateData, categories }) => {
-
   return (
     <div className="space-y-6">
       <div>
@@ -302,7 +399,7 @@ const BasicInformation: React.FC<{
             >
               <option value="">Select category</option>
               {categories.map(cat => (
-                <option key={cat.category_id} value={cat.category_id}>{cat.name}</option>
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
           </div>
@@ -324,39 +421,28 @@ const BasicInformation: React.FC<{
   )
 }
 
-// Step 2: Create Sections
 const CreateSections: React.FC<{
-  templateData: Partial<AuditTemplate>
-  setTemplateData: (data: Partial<AuditTemplate>) => void
-}> = ({ templateData, setTemplateData }) => {
+  sections: Partial<TemplateSection>[]
+  setSections: (sections: Partial<TemplateSection>[]) => void
+}> = ({ sections, setSections }) => {
   const addSection = () => {
-    const newSection: Section = {
-      section_id: `section_${Date.now()}`,
+    const newSection: Partial<TemplateSection> = {
+      id: `temp_${Date.now()}`,
       title: '',
       description: '',
-      order_index: (templateData.sections?.length || 0) + 1,
-      questions: []
+      order_index: sections.length
     }
-    setTemplateData({
-      ...templateData,
-      sections: [...(templateData.sections || []), newSection]
-    })
+    setSections([...sections, newSection])
   }
 
-  const removeSection = (sectionId: string) => {
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.filter(s => s.section_id !== sectionId) || []
-    })
+  const removeSection = (index: number) => {
+    setSections(sections.filter((_, i) => i !== index))
   }
 
-  const updateSection = (sectionId: string, updates: Partial<Section>) => {
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.map(s => 
-        s.section_id === sectionId ? { ...s, ...updates } : s
-      ) || []
-    })
+  const updateSection = (index: number, updates: Partial<TemplateSection>) => {
+    setSections(sections.map((section, i) => 
+      i === index ? { ...section, ...updates } : section
+    ))
   }
 
   return (
@@ -365,20 +451,20 @@ const CreateSections: React.FC<{
         <h3 className="text-lg font-semibold text-gray-900">Create Sections</h3>
         <button
           onClick={addSection}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
         >
-          <Plus className="h-4 w-4 mr-2 inline" />
+          <Plus className="h-4 w-4 mr-2" />
           Add Section
         </button>
       </div>
 
       <div className="space-y-4">
-        {templateData.sections?.map((section, index) => (
-          <div key={section.section_id} className="border border-gray-200 rounded-lg p-4">
+        {sections.map((section, index) => (
+          <div key={section.id || index} className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-md font-medium text-gray-900">Section {index + 1}</h4>
               <button
-                onClick={() => removeSection(section.section_id)}
+                onClick={() => removeSection(index)}
                 className="text-red-500 hover:text-red-700 transition-colors"
               >
                 <X className="h-5 w-5" />
@@ -391,8 +477,8 @@ const CreateSections: React.FC<{
                 </label>
                 <input
                   type="text"
-                  value={section.title}
-                  onChange={(e) => updateSection(section.section_id, { title: e.target.value })}
+                  value={section.title || ''}
+                  onChange={(e) => updateSection(index, { title: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter section title"
                 />
@@ -403,8 +489,8 @@ const CreateSections: React.FC<{
                 </label>
                 <input
                   type="number"
-                  value={section.order_index}
-                  onChange={(e) => updateSection(section.section_id, { order_index: parseInt(e.target.value) })}
+                  value={section.order_index || 0}
+                  onChange={(e) => updateSection(index, { order_index: parseInt(e.target.value) })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -414,8 +500,8 @@ const CreateSections: React.FC<{
                 Description
               </label>
               <textarea
-                value={section.description}
-                onChange={(e) => updateSection(section.section_id, { description: e.target.value })}
+                value={section.description || ''}
+                onChange={(e) => updateSection(index, { description: e.target.value })}
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Describe what this section covers"
@@ -425,7 +511,7 @@ const CreateSections: React.FC<{
         ))}
       </div>
 
-      {(!templateData.sections || templateData.sections.length === 0) && (
+      {sections.length === 0 && (
         <div className="text-center py-8">
           <p className="text-gray-500">No sections created yet. Add your first section to get started.</p>
         </div>
@@ -434,12 +520,12 @@ const CreateSections: React.FC<{
   )
 }
 
-// Step 3: Add Questions
 const AddQuestions: React.FC<{
-  templateData: Partial<AuditTemplate>
-  setTemplateData: (data: Partial<AuditTemplate>) => void
-}> = ({ templateData, setTemplateData }) => {
-  const [selectedSectionId, setSelectedSectionId] = useState<string>('')
+  sections: Partial<TemplateSection>[]
+  questions: Record<string, Partial<TemplateQuestion>[]>
+  setQuestions: (questions: Record<string, Partial<TemplateQuestion>[]>) => void
+}> = ({ sections, questions, setQuestions }) => {
+  const [selectedSectionIndex, setSelectedSectionIndex] = useState<number>(0)
 
   const questionTypes = [
     { value: 'text', label: 'Text Input' },
@@ -452,53 +538,51 @@ const AddQuestions: React.FC<{
     { value: 'barcode', label: 'Barcode Scanner' }
   ]
 
-  const addQuestion = (sectionId: string) => {
-    const newQuestion: Question = {
-      question_id: `question_${Date.now()}`,
+  const addQuestion = (sectionTitle: string) => {
+    const newQuestion: Partial<TemplateQuestion> = {
+      id: `temp_${Date.now()}`,
       text: '',
       type: 'text',
       options: [],
-      validation: {
-        mandatory: false
-      }
+      validation: { mandatory: false },
+      conditional_logic: {},
+      order_index: (questions[sectionTitle] || []).length
     }
 
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.map(section =>
-        section.section_id === sectionId
-          ? { ...section, questions: [...section.questions, newQuestion] }
-          : section
-      ) || []
+    setQuestions({
+      ...questions,
+      [sectionTitle]: [...(questions[sectionTitle] || []), newQuestion]
     })
   }
 
-  const removeQuestion = (sectionId: string, questionId: string) => {
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.map(section =>
-        section.section_id === sectionId
-          ? { ...section, questions: section.questions.filter(q => q.question_id !== questionId) }
-          : section
-      ) || []
+  const removeQuestion = (sectionTitle: string, questionIndex: number) => {
+    const sectionQuestions = questions[sectionTitle] || []
+    setQuestions({
+      ...questions,
+      [sectionTitle]: sectionQuestions.filter((_, i) => i !== questionIndex)
     })
   }
 
-  const updateQuestion = (sectionId: string, questionId: string, updates: Partial<Question>) => {
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.map(section =>
-        section.section_id === sectionId
-          ? {
-              ...section,
-              questions: section.questions.map(q =>
-                q.question_id === questionId ? { ...q, ...updates } : q
-              )
-            }
-          : section
-      ) || []
+  const updateQuestion = (sectionTitle: string, questionIndex: number, updates: Partial<TemplateQuestion>) => {
+    const sectionQuestions = questions[sectionTitle] || []
+    setQuestions({
+      ...questions,
+      [sectionTitle]: sectionQuestions.map((q, i) => 
+        i === questionIndex ? { ...q, ...updates } : q
+      )
     })
   }
+
+  if (sections.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500">Please create sections first before adding questions.</p>
+      </div>
+    )
+  }
+
+  const selectedSection = sections[selectedSectionIndex]
+  const sectionQuestions = questions[selectedSection?.title || ''] || []
 
   return (
     <div className="space-y-6">
@@ -509,315 +593,182 @@ const AddQuestions: React.FC<{
             Select Section
           </label>
           <select
-            value={selectedSectionId}
-            onChange={(e) => setSelectedSectionId(e.target.value)}
+            value={selectedSectionIndex}
+            onChange={(e) => setSelectedSectionIndex(parseInt(e.target.value))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="">Select a section to add questions</option>
-            {templateData.sections?.map(section => (
-              <option key={section.section_id} value={section.section_id}>
-                {section.title}
+            {sections.map((section, index) => (
+              <option key={section.id || index} value={index}>
+                {section.title || `Section ${index + 1}`}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      {selectedSectionId && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-md font-medium text-gray-900">
-              Questions for: {templateData.sections?.find(s => s.section_id === selectedSectionId)?.title}
-            </h4>
-            <button
-              onClick={() => addQuestion(selectedSectionId)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-4 w-4 mr-2 inline" />
-              Add Question
-            </button>
-          </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-md font-medium text-gray-900">
+            Questions for: {selectedSection?.title || 'Selected Section'}
+          </h4>
+          <button
+            onClick={() => addQuestion(selectedSection?.title || '')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Question
+          </button>
+        </div>
 
-          {templateData.sections?.find(s => s.section_id === selectedSectionId)?.questions.map((question, index) => (
-            <div key={question.question_id} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h5 className="text-sm font-medium text-gray-900">Question {index + 1}</h5>
-                <button
-                  onClick={() => removeQuestion(selectedSectionId, question.question_id)}
-                  className="text-red-500 hover:text-red-700 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Question Text *
-                  </label>
-                  <input
-                    type="text"
-                    value={question.text}
-                    onChange={(e) => updateQuestion(selectedSectionId, question.question_id, { text: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter question text"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Question Type
-                  </label>
-                  <select
-                    value={question.type}
-                    onChange={(e) => updateQuestion(selectedSectionId, question.question_id, { type: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {questionTypes.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {['single_choice', 'multiple_choice', 'dropdown'].includes(question.type) && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Options (one per line)
-                  </label>
-                  <textarea
-                    value={question.options?.join('\n') || ''}
-                    onChange={(e) => updateQuestion(selectedSectionId, question.question_id, { 
-                      options: e.target.value.split('\n').filter(o => o.trim()) 
-                    })}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Option 1&#10;Option 2&#10;Option 3"
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center space-x-4">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={question.validation?.mandatory || false}
-                    onChange={(e) => updateQuestion(selectedSectionId, question.question_id, {
-                      validation: { ...question.validation, mandatory: e.target.checked }
-                    })}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-700">Mandatory</span>
+        {sectionQuestions.map((question, index) => (
+          <div key={question.id || index} className="border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h5 className="text-sm font-medium text-gray-900">Question {index + 1}</h5>
+              <button
+                onClick={() => removeQuestion(selectedSection?.title || '', index)}
+                className="text-red-500 hover:text-red-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Question Text *
                 </label>
-                
-                {question.type === 'numeric' && (
-                  <>
-                    <div className="flex items-center space-x-2">
-                      <label className="text-sm text-gray-700">Min:</label>
-                      <input
-                        type="number"
-                        value={question.validation?.min_value || ''}
-                        onChange={(e) => updateQuestion(selectedSectionId, question.question_id, {
-                          validation: { ...question.validation, min_value: parseFloat(e.target.value) }
-                        })}
-                        className="w-20 px-2 py-1 border border-gray-300 rounded-md"
-                      />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <label className="text-sm text-gray-700">Max:</label>
-                      <input
-                        type="number"
-                        value={question.validation?.max_value || ''}
-                        onChange={(e) => updateQuestion(selectedSectionId, question.question_id, {
-                          validation: { ...question.validation, max_value: parseFloat(e.target.value) }
-                        })}
-                        className="w-20 px-2 py-1 border border-gray-300 rounded-md"
-                      />
-                    </div>
-                  </>
-                )}
+                <input
+                  type="text"
+                  value={question.text || ''}
+                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { text: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter question text"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Question Type
+                </label>
+                <select
+                  value={question.type || 'text'}
+                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { type: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {questionTypes.map(type => (
+                    <option key={type.value} value={type.value}>{type.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
-// Step 4: Configure Logic
-const ConfigureLogic: React.FC<{
-  templateData: Partial<AuditTemplate>
-  setTemplateData: (data: Partial<AuditTemplate>) => void
-}> = ({ templateData, setTemplateData }) => {
-  const [selectedSectionId, setSelectedSectionId] = useState<string>('')
+            {['single_choice', 'multiple_choice', 'dropdown'].includes(question.type || '') && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Options (one per line)
+                </label>
+                <textarea
+                  value={(question.options || []).join('\n')}
+                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { 
+                    options: e.target.value.split('\n').filter(o => o.trim()) 
+                  })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Option 1&#10;Option 2&#10;Option 3"
+                />
+              </div>
+            )}
 
-  const updateSectionQuestions = (sectionId: string, questions: ConditionalQuestion[]) => {
-    setTemplateData({
-      ...templateData,
-      sections: templateData.sections?.map(section =>
-        section.section_id === sectionId
-          ? { ...section, questions }
-          : section
-      ) || []
-    })
-  }
-
-  const selectedSection = templateData.sections?.find(s => s.section_id === selectedSectionId)
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Configure Logic</h3>
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Section to Configure Logic
-          </label>
-          <select
-            value={selectedSectionId}
-            onChange={(e) => setSelectedSectionId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">Select a section...</option>
-            {templateData.sections?.map(section => (
-              <option key={section.section_id} value={section.section_id}>
-                {section.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      
-      {selectedSectionId && selectedSection ? (
-        <ConditionalLogicBuilder
-          questions={selectedSection.questions as ConditionalQuestion[]}
-          onQuestionsChange={(questions) => updateSectionQuestions(selectedSectionId, questions)}
-        />
-      ) : (
-        <div className="border border-gray-200 rounded-lg p-8 text-center">
-          <h4 className="text-md font-medium text-gray-900 mb-2">Select a Section</h4>
-          <p className="text-gray-500">
-            Choose a section from the dropdown above to configure conditional logic for its questions.
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Step 5: Scoring and Publish
-const ScoringAndPublish: React.FC<{
-  templateData: Partial<AuditTemplate>
-  setTemplateData: (data: Partial<AuditTemplate>) => void
-  onPublish: () => void
-  isLoading: boolean
-}> = ({ templateData, setTemplateData, onPublish, isLoading }) => {
-  const [scoringEnabled, setScoringEnabled] = useState(false)
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Scoring & Publish</h3>
-        
-        <div className="mb-6">
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={scoringEnabled}
-              onChange={(e) => setScoringEnabled(e.target.checked)}
-              className="mr-2"
-            />
-            <span className="text-sm font-medium text-gray-700">Enable Scoring</span>
-          </label>
-        </div>
-
-        {scoringEnabled && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Compliance Threshold (%)
+            <div className="flex items-center space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={question.validation?.mandatory || false}
+                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, {
+                    validation: { ...question.validation, mandatory: e.target.checked }
+                  })}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700">Mandatory</span>
               </label>
-              <input
-                type="number"
-                value={templateData.scoring_rules?.threshold || 80}
-                onChange={(e) => setTemplateData({
-                  ...templateData,
-                  scoring_rules: {
-                    ...templateData.scoring_rules,
-                    threshold: parseInt(e.target.value)
-                  }
-                })}
-                className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="0"
-                max="100"
-              />
             </div>
+          </div>
+        ))}
 
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Section Weights</h4>
-              <div className="space-y-2">
-                {templateData.sections?.map(section => (
-                  <div key={section.section_id} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">{section.title}</span>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        value={templateData.scoring_rules?.weights?.[section.section_id] || 0}
-                        onChange={(e) => setTemplateData({
-                          ...templateData,
-                          scoring_rules: {
-                            ...templateData.scoring_rules,
-                            weights: {
-                              ...templateData.scoring_rules?.weights,
-                              [section.section_id]: parseInt(e.target.value)
-                            }
-                          }
-                        })}
-                        className="w-16 px-2 py-1 border border-gray-300 rounded-md"
-                        min="0"
-                        max="100"
-                      />
-                      <span className="text-sm text-gray-500">%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {sectionQuestions.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No questions added yet. Add your first question to get started.</p>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
 
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h4 className="text-md font-medium text-gray-900 mb-2">Template Summary</h4>
+const ReviewAndPublish: React.FC<{
+  templateData: Partial<Template>
+  sections: Partial<TemplateSection>[]
+  questions: Record<string, Partial<TemplateQuestion>[]>
+  onPublish: () => void
+  isLoading: boolean
+}> = ({ templateData, sections, questions, onPublish, isLoading }) => {
+  const totalQuestions = Object.values(questions).reduce((total, sectionQuestions) => 
+    total + sectionQuestions.length, 0
+  )
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Review & Publish</h3>
+        
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+          <h4 className="text-md font-medium text-gray-900 mb-4">Template Summary</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-600">Name:</span>
-              <span className="ml-2 font-medium">{templateData.name}</span>
+              <span className="ml-2 font-medium">{templateData.name || 'Untitled'}</span>
             </div>
             <div>
-              <span className="text-gray-600">Category:</span>
-              <span className="ml-2 font-medium">{templateData.category}</span>
+              <span className="text-gray-600">Description:</span>
+              <span className="ml-2 font-medium">{templateData.description || 'No description'}</span>
             </div>
             <div>
               <span className="text-gray-600">Sections:</span>
-              <span className="ml-2 font-medium">{templateData.sections?.length || 0}</span>
+              <span className="ml-2 font-medium">{sections.length}</span>
             </div>
             <div>
               <span className="text-gray-600">Total Questions:</span>
-              <span className="ml-2 font-medium">
-                {templateData.sections?.reduce((total, section) => total + section.questions.length, 0) || 0}
-              </span>
+              <span className="ml-2 font-medium">{totalQuestions}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-4">
-          <button className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+        <div className="space-y-4">
+          <h4 className="text-md font-medium text-gray-900">Sections Overview</h4>
+          {sections.map((section, index) => {
+            const sectionQuestions = questions[section.title || ''] || []
+            return (
+              <div key={section.id || index} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="font-medium text-gray-900">{section.title}</h5>
+                    <p className="text-sm text-gray-500">{section.description}</p>
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    {sectionQuestions.length} questions
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center space-x-4 pt-6">
+          <button 
             onClick={onPublish}
-            disabled={isLoading}
+            disabled={isLoading || !templateData.name || sections.length === 0}
+            className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
             {isLoading ? 'Publishing...' : 'Publish Template'}
-          </button>
-          <button className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors">
-            <Eye className="h-4 w-4 mr-2 inline" />
-            Preview Template
           </button>
         </div>
       </div>
