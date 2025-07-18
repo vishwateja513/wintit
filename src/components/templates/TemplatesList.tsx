@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Copy, Trash2, Eye, FileText, Calendar, User, Search, Filter } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
 import { 
   Template, 
   TemplateCategory,
@@ -22,7 +21,6 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
   onEditTemplate,
   onTemplateUpdated 
 }) => {
-  const { user } = useAuth()
   const [templates, setTemplates] = useState<Template[]>([])
   const [categories, setCategories] = useState<TemplateCategory[]>([])
   const [loading, setLoading] = useState(true)
@@ -30,32 +28,30 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
   const [selectedCategory, setSelectedCategory] = useState('')
 
   useEffect(() => {
-    if (user) {
-      loadTemplates()
-      loadCategories()
+    loadTemplates()
+    loadCategories()
+    
+    // Set up real-time subscription
+    const subscription = subscribeToTemplates((payload) => {
+      console.log('Real-time template update:', payload)
       
-      // Set up real-time subscription
-      const subscription = subscribeToTemplates((payload) => {
-        console.log('Real-time template update:', payload)
-        
-        if (payload.eventType === 'INSERT') {
-          setTemplates(prev => [payload.new, ...prev])
-        } else if (payload.eventType === 'UPDATE') {
-          setTemplates(prev => prev.map(template => 
-            template.id === payload.new.id ? { ...template, ...payload.new } : template
-          ))
-        } else if (payload.eventType === 'DELETE') {
-          setTemplates(prev => prev.filter(template => 
-            template.id !== payload.old.id
-          ))
-        }
-      })
-      
-      return () => {
-        subscription.unsubscribe()
+      if (payload.eventType === 'INSERT') {
+        setTemplates(prev => [payload.new, ...prev])
+      } else if (payload.eventType === 'UPDATE') {
+        setTemplates(prev => prev.map(template => 
+          template.id === payload.new.id ? { ...template, ...payload.new } : template
+        ))
+      } else if (payload.eventType === 'DELETE') {
+        setTemplates(prev => prev.filter(template => 
+          template.id !== payload.old.id
+        ))
       }
+    })
+    
+    return () => {
+      subscription.unsubscribe()
     }
-  }, [user])
+  }, [])
 
   const loadTemplates = async () => {
     try {
@@ -124,18 +120,6 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
       console.error('Error duplicating template:', error)
       alert('Failed to duplicate template. Please try again.')
     }
-  }
-
-  if (!user) {
-    return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Authentication Required</h3>
-          <p className="text-gray-500">Please sign in to manage templates.</p>
-        </div>
-      </div>
-    )
   }
 
   return (

@@ -98,17 +98,10 @@ export const fetchTemplateById = async (id: string) => {
 }
 
 export const createTemplate = async (template: Partial<Template>) => {
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
   const { data, error } = await supabase
     .from('templates')
     .insert({
-      ...template,
-      created_by: user.id
+      ...template
     })
     .select(`
       *,

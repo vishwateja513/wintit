@@ -1,6 +1,5 @@
 import React from 'react'
 import { Building2, Users, FileText, BarChart3, Settings, LogOut, User, Wifi, WifiOff } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
 import { useState, useEffect } from 'react'
 import { testSupabaseConnection } from '../../lib/supabase'
 
@@ -11,7 +10,6 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => {
-  const { user, profile, signOut } = useAuth()
   const [isConnected, setIsConnected] = useState(true)
   
   const navItems = [
@@ -34,14 +32,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
     
     return () => clearInterval(interval)
   }, [])
-
-  const handleSignOut = async () => {
-    await signOut()
-  }
-
-  const getUserInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -73,29 +63,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
               {/* User Profile */}
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-medium">
-                    {profile?.name ? getUserInitials(profile.name) : <User className="h-4 w-4" />}
-                  </span>
+                  <User className="h-4 w-4 text-white" />
                 </div>
                 <div className="hidden sm:block">
                   <span className="text-sm font-medium text-gray-700">
-                    {profile?.name || user?.email}
+                    Demo User
                   </span>
-                  {profile?.role && (
-                    <span className="block text-xs text-gray-500 capitalize">
-                      {profile.role}
-                    </span>
-                  )}
+                  <span className="block text-xs text-gray-500">Administrator</span>
                 </div>
               </div>
-              
-              <button 
-                onClick={handleSignOut}
-                className="text-gray-500 hover:text-gray-700 transition-colors"
-                title="Sign Out"
-              >
-                <LogOut className="h-5 w-5" />
-              </button>
             </div>
           </div>
         </div>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Save, X, Plus } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
 import { 
   Template, 
   TemplateCategory, 
@@ -26,7 +25,6 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   template, 
   onTemplateCreated 
 }) => {
-  const { user } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<TemplateCategory[]>([])
@@ -87,20 +85,6 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
     } catch (error) {
       console.error('Error loading template details:', error)
     }
-  }
-
-  if (!user) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6">
-          <h2 className="text-xl font-bold mb-4">Authentication Required</h2>
-          <p className="text-gray-600 mb-4">Please sign in to create templates.</p>
-          <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded-md">
-            Close
-          </button>
-        </div>
-      </div>
-    )
   }
 
   const steps = [
