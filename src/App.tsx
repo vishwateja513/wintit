@@ -23,9 +23,9 @@ const AppContent: React.FC = () => {
     )
   }
 
-  if (!user) {
-    return <LoginForm />
-  }
+  // if (!user) {
+  //   return <LoginForm
+  // }
 
   const renderContent = () => {
     switch (activeTab) {
