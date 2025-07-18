@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import LoginForm from './components/auth/LoginForm'
 import Layout from './components/common/Layout'
 import Dashboard from './components/dashboard/Dashboard'
 import TemplatesList from './components/templates/TemplatesList'
