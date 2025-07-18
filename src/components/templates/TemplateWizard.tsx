@@ -1,23 +1,37 @@
 import React, { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Save, X, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, X, Plus, Trash2 } from 'lucide-react'
 import { 
-  Template, 
+  AuditTemplate, 
   TemplateCategory, 
-  TemplateSection, 
-  TemplateQuestion,
   createTemplate,
   updateTemplate,
-  publishTemplate,
-  fetchTemplateCategories,
-  createTemplateSection,
-  createTemplateQuestion,
-  fetchTemplateById
-} from '../../lib/templates'
+  fetchTemplateCategories
+} from '../../lib/supabase'
 
 interface TemplateWizardProps {
   onClose: () => void
-  template?: Template
-  onTemplateCreated?: (template: Template) => void
+  template?: AuditTemplate
+  onTemplateCreated?: (template: AuditTemplate) => void
+}
+
+interface Section {
+  section_id: string
+  title: string
+  description: string
+  order_index: number
+  questions: Question[]
+}
+
+interface Question {
+  question_id: string
+  text: string
+  type: 'text' | 'numeric' | 'single_choice' | 'multiple_choice' | 'dropdown' | 'date' | 'file_upload' | 'barcode'
+  options?: string[]
+  validation?: {
+    mandatory: boolean
+    min_value?: number
+    max_value?: number
+  }
 }
 
 const TemplateWizard: React.FC<TemplateWizardProps> = ({ 
@@ -29,61 +43,30 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<TemplateCategory[]>([])
   
-  const [templateData, setTemplateData] = useState<Partial<Template>>({
-    id: template?.id,
+  const [templateData, setTemplateData] = useState({
     name: template?.name || '',
     description: template?.description || '',
     category_id: template?.category_id || '',
-    version: template?.version || 1,
-    conditional_logic: template?.conditional_logic || {},
-    scoring_rules: template?.scoring_rules || {
-      weights: {},
-      threshold: 80,
-      critical_questions: []
-    },
-    validation_rules: template?.validation_rules || {},
-    is_published: template?.is_published || false,
-    is_active: template?.is_active !== false
   })
 
-  const [sections, setSections] = useState<Partial<TemplateSection>[]>([])
-  const [questions, setQuestions] = useState<Record<string, Partial<TemplateQuestion>[]>>({})
+  const [sections, setSections] = useState<Section[]>(
+    template?.sections || []
+  )
 
   useEffect(() => {
     loadCategories()
-    if (template?.id) {
-      loadTemplateDetails(template.id)
-    }
-  }, [template])
+  }, [])
 
   const loadCategories = async () => {
     try {
       const { data, error } = await fetchTemplateCategories()
-      if (error) throw error
-      setCategories(data || [])
-    } catch (error) {
-      console.error('Error loading categories:', error)
-    }
-  }
-
-  const loadTemplateDetails = async (templateId: string) => {
-    try {
-      const { data, error } = await fetchTemplateById(templateId)
-      if (error) throw error
-      
-      if (data) {
-        setTemplateData(data)
-        setSections(data.sections || [])
-        
-        // Convert sections and questions to local state
-        const questionsMap: Record<string, Partial<TemplateQuestion>[]> = {}
-        data.sections?.forEach(section => {
-          questionsMap[section.id] = section.questions || []
-        })
-        setQuestions(questionsMap)
+      if (error) {
+        console.error('Error loading categories:', error)
+      } else {
+        setCategories(data || [])
       }
     } catch (error) {
-      console.error('Error loading template details:', error)
+      console.error('Error loading categories:', error)
     }
   }
 
@@ -107,24 +90,38 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   }
 
   const handleSaveDraft = async () => {
+    if (!templateData.name.trim()) {
+      alert('Please enter a template name')
+      return
+    }
+
     setIsLoading(true)
     try {
-      // Prepare template data with sections
-      const templateWithSections = {
-        ...templateData,
-        sections: sections.map(section => ({
-          ...section,
-          questions: questions[section.title || ''] || []
-        })),
+      const templatePayload = {
+        name: templateData.name,
+        description: templateData.description,
+        category_id: templateData.category_id || null,
+        sections: sections,
+        conditional_logic: {},
+        scoring_rules: {},
+        validation_rules: {},
         is_published: false
       }
 
-      const { data: savedTemplate, error } = await saveTemplate(templateWithSections)
-      if (error) throw error
-      
-      setTemplateData(prev => ({ ...prev, template_id: savedTemplate!.template_id }))
-      onTemplateCreated?.(savedTemplate!)
-      alert('Template saved as draft successfully!')
+      let result
+      if (template?.template_id) {
+        result = await updateTemplate(template.template_id, templatePayload)
+      } else {
+        result = await createTemplate(templatePayload)
+      }
+
+      if (result.error) {
+        console.error('Error saving template:', result.error)
+        alert('Failed to save template. Please try again.')
+      } else if (result.data) {
+        onTemplateCreated?.(result.data)
+        alert('Template saved as draft successfully!')
+      }
     } catch (error) {
       console.error('Error saving template:', error)
       alert('Failed to save template. Please try again.')
@@ -134,41 +131,44 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   }
 
   const handlePublishTemplate = async () => {
-    if (!templateData.name || sections.length === 0) {
-      alert('Please complete the template before publishing.')
+    if (!templateData.name.trim()) {
+      alert('Please enter a template name')
+      return
+    }
+
+    if (sections.length === 0) {
+      alert('Please add at least one section')
       return
     }
 
     setIsLoading(true)
     try {
-      // First save the template with sections
-      const templateWithSections = {
-        ...templateData,
-        sections: sections.map(section => ({
-          ...section,
-          questions: questions[section.title || ''] || []
-        })),
-        is_published: false
+      const templatePayload = {
+        name: templateData.name,
+        description: templateData.description,
+        category_id: templateData.category_id || null,
+        sections: sections,
+        conditional_logic: {},
+        scoring_rules: {},
+        validation_rules: {},
+        is_published: true
       }
 
-      let savedTemplate
-      if (templateData.template_id) {
-        const { data, error } = await saveTemplate(templateWithSections)
-        if (error) throw error
-        savedTemplate = data!
+      let result
+      if (template?.template_id) {
+        result = await updateTemplate(template.template_id, templatePayload)
       } else {
-        const { data, error } = await saveTemplate(templateWithSections)
-        if (error) throw error
-        savedTemplate = data!
+        result = await createTemplate(templatePayload)
       }
 
-      // Then publish it
-      const { data: publishedTemplate, error: publishError } = await publishTemplate(savedTemplate.template_id)
-      if (publishError) throw publishError
-      
-      onTemplateCreated?.(publishedTemplate!)
-      alert('Template published successfully!')
-      onClose()
+      if (result.error) {
+        console.error('Error publishing template:', result.error)
+        alert('Failed to publish template. Please try again.')
+      } else if (result.data) {
+        onTemplateCreated?.(result.data)
+        alert('Template published successfully!')
+        onClose()
+      }
     } catch (error) {
       console.error('Error publishing template:', error)
       alert('Failed to publish template. Please try again.')
@@ -193,14 +193,12 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
       case 3:
         return <AddQuestions 
           sections={sections} 
-          questions={questions} 
-          setQuestions={setQuestions} 
+          setSections={setSections} 
         />
       case 4:
         return <ReviewAndPublish 
           templateData={templateData} 
           sections={sections} 
-          questions={questions}
           onPublish={handlePublishTemplate} 
           isLoading={isLoading} 
         />
@@ -321,8 +319,8 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
 
 // Step Components
 const BasicInformation: React.FC<{
-  templateData: Partial<Template>
-  setTemplateData: (data: Partial<Template>) => void
+  templateData: any
+  setTemplateData: (data: any) => void
   categories: TemplateCategory[]
 }> = ({ templateData, setTemplateData, categories }) => {
   return (
@@ -336,7 +334,7 @@ const BasicInformation: React.FC<{
             </label>
             <input
               type="text"
-              value={templateData.name || ''}
+              value={templateData.name}
               onChange={(e) => setTemplateData({ ...templateData, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter template name"
@@ -347,13 +345,13 @@ const BasicInformation: React.FC<{
               Category
             </label>
             <select
-              value={templateData.category_id || ''}
+              value={templateData.category_id}
               onChange={(e) => setTemplateData({ ...templateData, category_id: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select category</option>
               {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                <option key={cat.category_id} value={cat.category_id}>{cat.name}</option>
               ))}
             </select>
           </div>
@@ -363,7 +361,7 @@ const BasicInformation: React.FC<{
             Description
           </label>
           <textarea
-            value={templateData.description || ''}
+            value={templateData.description}
             onChange={(e) => setTemplateData({ ...templateData, description: e.target.value })}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -376,15 +374,16 @@ const BasicInformation: React.FC<{
 }
 
 const CreateSections: React.FC<{
-  sections: Partial<TemplateSection>[]
-  setSections: (sections: Partial<TemplateSection>[]) => void
+  sections: Section[]
+  setSections: (sections: Section[]) => void
 }> = ({ sections, setSections }) => {
   const addSection = () => {
-    const newSection: Partial<TemplateSection> = {
-      id: `temp_${Date.now()}`,
+    const newSection: Section = {
+      section_id: `section_${Date.now()}`,
       title: '',
       description: '',
-      order_index: sections.length
+      order_index: sections.length,
+      questions: []
     }
     setSections([...sections, newSection])
   }
@@ -393,7 +392,7 @@ const CreateSections: React.FC<{
     setSections(sections.filter((_, i) => i !== index))
   }
 
-  const updateSection = (index: number, updates: Partial<TemplateSection>) => {
+  const updateSection = (index: number, updates: Partial<Section>) => {
     setSections(sections.map((section, i) => 
       i === index ? { ...section, ...updates } : section
     ))
@@ -414,14 +413,14 @@ const CreateSections: React.FC<{
 
       <div className="space-y-4">
         {sections.map((section, index) => (
-          <div key={section.id || index} className="border border-gray-200 rounded-lg p-4">
+          <div key={section.section_id} className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-md font-medium text-gray-900">Section {index + 1}</h4>
               <button
                 onClick={() => removeSection(index)}
                 className="text-red-500 hover:text-red-700 transition-colors"
               >
-                <X className="h-5 w-5" />
+                <Trash2 className="h-5 w-5" />
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -431,7 +430,7 @@ const CreateSections: React.FC<{
                 </label>
                 <input
                   type="text"
-                  value={section.title || ''}
+                  value={section.title}
                   onChange={(e) => updateSection(index, { title: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter section title"
@@ -443,7 +442,7 @@ const CreateSections: React.FC<{
                 </label>
                 <input
                   type="number"
-                  value={section.order_index || 0}
+                  value={section.order_index}
                   onChange={(e) => updateSection(index, { order_index: parseInt(e.target.value) })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -454,7 +453,7 @@ const CreateSections: React.FC<{
                 Description
               </label>
               <textarea
-                value={section.description || ''}
+                value={section.description}
                 onChange={(e) => updateSection(index, { description: e.target.value })}
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -475,10 +474,9 @@ const CreateSections: React.FC<{
 }
 
 const AddQuestions: React.FC<{
-  sections: Partial<TemplateSection>[]
-  questions: Record<string, Partial<TemplateQuestion>[]>
-  setQuestions: (questions: Record<string, Partial<TemplateQuestion>[]>) => void
-}> = ({ sections, questions, setQuestions }) => {
+  sections: Section[]
+  setSections: (sections: Section[]) => void
+}> = ({ sections, setSections }) => {
   const [selectedSectionIndex, setSelectedSectionIndex] = useState<number>(0)
 
   const questionTypes = [
@@ -492,39 +490,33 @@ const AddQuestions: React.FC<{
     { value: 'barcode', label: 'Barcode Scanner' }
   ]
 
-  const addQuestion = (sectionTitle: string) => {
-    const newQuestion: Partial<TemplateQuestion> = {
-      id: `temp_${Date.now()}`,
+  const addQuestion = (sectionIndex: number) => {
+    const newQuestion: Question = {
+      question_id: `question_${Date.now()}`,
       text: '',
       type: 'text',
       options: [],
-      validation: { mandatory: false },
-      conditional_logic: {},
-      order_index: (questions[sectionTitle] || []).length
+      validation: { mandatory: false }
     }
 
-    setQuestions({
-      ...questions,
-      [sectionTitle]: [...(questions[sectionTitle] || []), newQuestion]
-    })
+    const updatedSections = [...sections]
+    updatedSections[sectionIndex].questions.push(newQuestion)
+    setSections(updatedSections)
   }
 
-  const removeQuestion = (sectionTitle: string, questionIndex: number) => {
-    const sectionQuestions = questions[sectionTitle] || []
-    setQuestions({
-      ...questions,
-      [sectionTitle]: sectionQuestions.filter((_, i) => i !== questionIndex)
-    })
+  const removeQuestion = (sectionIndex: number, questionIndex: number) => {
+    const updatedSections = [...sections]
+    updatedSections[sectionIndex].questions.splice(questionIndex, 1)
+    setSections(updatedSections)
   }
 
-  const updateQuestion = (sectionTitle: string, questionIndex: number, updates: Partial<TemplateQuestion>) => {
-    const sectionQuestions = questions[sectionTitle] || []
-    setQuestions({
-      ...questions,
-      [sectionTitle]: sectionQuestions.map((q, i) => 
-        i === questionIndex ? { ...q, ...updates } : q
-      )
-    })
+  const updateQuestion = (sectionIndex: number, questionIndex: number, updates: Partial<Question>) => {
+    const updatedSections = [...sections]
+    updatedSections[sectionIndex].questions[questionIndex] = {
+      ...updatedSections[sectionIndex].questions[questionIndex],
+      ...updates
+    }
+    setSections(updatedSections)
   }
 
   if (sections.length === 0) {
@@ -536,7 +528,6 @@ const AddQuestions: React.FC<{
   }
 
   const selectedSection = sections[selectedSectionIndex]
-  const sectionQuestions = questions[selectedSection?.title || ''] || []
 
   return (
     <div className="space-y-6">
@@ -552,7 +543,7 @@ const AddQuestions: React.FC<{
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {sections.map((section, index) => (
-              <option key={section.id || index} value={index}>
+              <option key={section.section_id} value={index}>
                 {section.title || `Section ${index + 1}`}
               </option>
             ))}
@@ -566,7 +557,7 @@ const AddQuestions: React.FC<{
             Questions for: {selectedSection?.title || 'Selected Section'}
           </h4>
           <button
-            onClick={() => addQuestion(selectedSection?.title || '')}
+            onClick={() => addQuestion(selectedSectionIndex)}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -574,15 +565,15 @@ const AddQuestions: React.FC<{
           </button>
         </div>
 
-        {sectionQuestions.map((question, index) => (
-          <div key={question.id || index} className="border border-gray-200 rounded-lg p-4">
+        {selectedSection?.questions.map((question, index) => (
+          <div key={question.question_id} className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-4">
               <h5 className="text-sm font-medium text-gray-900">Question {index + 1}</h5>
               <button
-                onClick={() => removeQuestion(selectedSection?.title || '', index)}
+                onClick={() => removeQuestion(selectedSectionIndex, index)}
                 className="text-red-500 hover:text-red-700 transition-colors"
               >
-                <X className="h-5 w-5" />
+                <Trash2 className="h-5 w-5" />
               </button>
             </div>
             
@@ -593,8 +584,8 @@ const AddQuestions: React.FC<{
                 </label>
                 <input
                   type="text"
-                  value={question.text || ''}
-                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { text: e.target.value })}
+                  value={question.text}
+                  onChange={(e) => updateQuestion(selectedSectionIndex, index, { text: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter question text"
                 />
@@ -604,8 +595,8 @@ const AddQuestions: React.FC<{
                   Question Type
                 </label>
                 <select
-                  value={question.type || 'text'}
-                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { type: e.target.value as any })}
+                  value={question.type}
+                  onChange={(e) => updateQuestion(selectedSectionIndex, index, { type: e.target.value as any })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   {questionTypes.map(type => (
@@ -615,14 +606,14 @@ const AddQuestions: React.FC<{
               </div>
             </div>
 
-            {['single_choice', 'multiple_choice', 'dropdown'].includes(question.type || '') && (
+            {['single_choice', 'multiple_choice', 'dropdown'].includes(question.type) && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Options (one per line)
                 </label>
                 <textarea
                   value={(question.options || []).join('\n')}
-                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, { 
+                  onChange={(e) => updateQuestion(selectedSectionIndex, index, { 
                     options: e.target.value.split('\n').filter(o => o.trim()) 
                   })}
                   rows={3}
@@ -637,7 +628,7 @@ const AddQuestions: React.FC<{
                 <input
                   type="checkbox"
                   checked={question.validation?.mandatory || false}
-                  onChange={(e) => updateQuestion(selectedSection?.title || '', index, {
+                  onChange={(e) => updateQuestion(selectedSectionIndex, index, {
                     validation: { ...question.validation, mandatory: e.target.checked }
                   })}
                   className="mr-2"
@@ -648,7 +639,7 @@ const AddQuestions: React.FC<{
           </div>
         ))}
 
-        {sectionQuestions.length === 0 && (
+        {selectedSection?.questions.length === 0 && (
           <div className="text-center py-8">
             <p className="text-gray-500">No questions added yet. Add your first question to get started.</p>
           </div>
@@ -659,14 +650,13 @@ const AddQuestions: React.FC<{
 }
 
 const ReviewAndPublish: React.FC<{
-  templateData: Partial<Template>
-  sections: Partial<TemplateSection>[]
-  questions: Record<string, Partial<TemplateQuestion>[]>
+  templateData: any
+  sections: Section[]
   onPublish: () => void
   isLoading: boolean
-}> = ({ templateData, sections, questions, onPublish, isLoading }) => {
-  const totalQuestions = Object.values(questions).reduce((total, sectionQuestions) => 
-    total + sectionQuestions.length, 0
+}> = ({ templateData, sections, onPublish, isLoading }) => {
+  const totalQuestions = sections.reduce((total, section) => 
+    total + section.questions.length, 0
   )
 
   return (
@@ -698,22 +688,19 @@ const ReviewAndPublish: React.FC<{
 
         <div className="space-y-4">
           <h4 className="text-md font-medium text-gray-900">Sections Overview</h4>
-          {sections.map((section, index) => {
-            const sectionQuestions = questions[section.title || ''] || []
-            return (
-              <div key={section.id || index} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h5 className="font-medium text-gray-900">{section.title}</h5>
-                    <p className="text-sm text-gray-500">{section.description}</p>
-                  </div>
-                  <span className="text-sm text-gray-500">
-                    {sectionQuestions.length} questions
-                  </span>
+          {sections.map((section, index) => (
+            <div key={section.section_id} className="border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h5 className="font-medium text-gray-900">{section.title}</h5>
+                  <p className="text-sm text-gray-500">{section.description}</p>
                 </div>
+                <span className="text-sm text-gray-500">
+                  {section.questions.length} questions
+                </span>
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
 
         <div className="flex items-center space-x-4 pt-6">

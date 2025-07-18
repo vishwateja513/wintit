@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Copy, Trash2, Eye, FileText, Calendar, User, Search, Filter } from 'lucide-react'
+import { Plus, Edit, Copy, Trash2, Eye, FileText, Calendar, User, Search, Filter, RefreshCw } from 'lucide-react'
 import { 
-  Template, 
+  AuditTemplate, 
   TemplateCategory,
   fetchTemplates, 
   fetchTemplateCategories,
   deleteTemplate,
   subscribeToTemplates,
   createTemplate
-} from '../../lib/templates'
+} from '../../lib/supabase'
 
 interface TemplatesListProps {
   onCreateTemplate: () => void
-  onEditTemplate?: (template: Template) => void
+  onEditTemplate?: (template: AuditTemplate) => void
   onTemplateUpdated?: () => void
 }
 
@@ -21,15 +21,15 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
   onEditTemplate,
   onTemplateUpdated 
 }) => {
-  const [templates, setTemplates] = useState<Template[]>([])
+  const [templates, setTemplates] = useState<AuditTemplate[]>([])
   const [categories, setCategories] = useState<TemplateCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
-    loadTemplates()
-    loadCategories()
+    loadData()
     
     // Set up real-time subscription
     const subscription = subscribeToTemplates((payload) => {
@@ -39,11 +39,11 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
         setTemplates(prev => [payload.new, ...prev])
       } else if (payload.eventType === 'UPDATE') {
         setTemplates(prev => prev.map(template => 
-          template.id === payload.new.id ? { ...template, ...payload.new } : template
+          template.template_id === payload.new.template_id ? { ...template, ...payload.new } : template
         ))
       } else if (payload.eventType === 'DELETE') {
         setTemplates(prev => prev.filter(template => 
-          template.id !== payload.old.id
+          template.template_id !== payload.old.template_id
         ))
       }
     })
@@ -53,27 +53,38 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
     }
   }, [])
 
-  const loadTemplates = async () => {
+  const loadData = async () => {
     try {
       setLoading(true)
-      const { data, error } = await fetchTemplates()
-      if (error) throw error
-      setTemplates(data || [])
+      
+      // Load templates and categories in parallel
+      const [templatesResult, categoriesResult] = await Promise.all([
+        fetchTemplates(),
+        fetchTemplateCategories()
+      ])
+      
+      if (templatesResult.error) {
+        console.error('Error loading templates:', templatesResult.error)
+      } else {
+        setTemplates(templatesResult.data || [])
+      }
+      
+      if (categoriesResult.error) {
+        console.error('Error loading categories:', categoriesResult.error)
+      } else {
+        setCategories(categoriesResult.data || [])
+      }
     } catch (error) {
-      console.error('Error loading templates:', error)
+      console.error('Error loading data:', error)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await fetchTemplateCategories()
-      if (error) throw error
-      setCategories(data || [])
-    } catch (error) {
-      console.error('Error loading categories:', error)
-    }
+  const handleRefresh = () => {
+    setRefreshing(true)
+    loadData()
   }
 
   const filteredTemplates = templates.filter(template => {
@@ -83,28 +94,33 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
     return matchesSearch && matchesCategory
   })
 
-  const handleDeleteTemplate = async (templateId: string) => {
-    if (!window.confirm('Are you sure you want to delete this template?')) {
+  const handleDeleteTemplate = async (templateId: string, templateName: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${templateName}"?`)) {
       return
     }
     
     try {
-      // For demo mode, remove from local array
-      setTemplates(prev => prev.filter(t => t.template_id !== templateId))
-      
-      alert('Template deleted successfully!')
+      const { error } = await deleteTemplate(templateId)
+      if (error) {
+        console.error('Error deleting template:', error)
+        alert('Failed to delete template. Please try again.')
+      } else {
+        // Remove from local state immediately for better UX
+        setTemplates(prev => prev.filter(t => t.template_id !== templateId))
+        alert('Template deleted successfully!')
+      }
     } catch (error) {
       console.error('Error deleting template:', error)
       alert('Failed to delete template. Please try again.')
     }
   }
 
-  const handleDuplicateTemplate = async (template: Template) => {
+  const handleDuplicateTemplate = async (template: AuditTemplate) => {
     try {
-      const { data, error } = await saveTemplate({
+      const { data, error } = await createTemplate({
         name: `${template.name} (Copy)`,
         description: template.description,
-        category_id: template.category_id || '',
+        category_id: template.category_id,
         sections: template.sections,
         conditional_logic: template.conditional_logic,
         scoring_rules: template.scoring_rules,
@@ -112,18 +128,22 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
         is_published: false
       })
       
-      if (error) throw error
-      
-      // Add to local state for demo mode
-      if (data) {
+      if (error) {
+        console.error('Error duplicating template:', error)
+        alert('Failed to duplicate template. Please try again.')
+      } else if (data) {
+        // Add to local state immediately for better UX
         setTemplates(prev => [data, ...prev])
+        alert('Template duplicated successfully!')
       }
-      
-      alert('Template duplicated successfully!')
     } catch (error) {
       console.error('Error duplicating template:', error)
       alert('Failed to duplicate template. Please try again.')
     }
+  }
+
+  const getCategoryById = (categoryId: string) => {
+    return categories.find(cat => cat.category_id === categoryId)
   }
 
   return (
@@ -133,13 +153,23 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
           <h2 className="text-2xl font-bold text-gray-900">Audit Templates</h2>
           <p className="text-gray-600 mt-1">Create and manage your audit templates</p>
         </div>
-        <button
-          onClick={onCreateTemplate}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create Template
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={onCreateTemplate}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Template
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -163,7 +193,7 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
           >
             <option value="">All Categories</option>
             {categories.map(category => (
-              <option key={category.id} value={category.id}>
+              <option key={category.category_id} value={category.category_id}>
                 {category.name}
               </option>
             ))}
@@ -181,91 +211,98 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTemplates.map((template) => (
-            <div key={template.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center">
-                    <div 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: template.category?.color + '20' }}
-                    >
-                      <FileText 
-                        className="h-5 w-5" 
-                        style={{ color: template.category?.color || '#3B82F6' }}
-                      />
+          {filteredTemplates.map((template) => {
+            const category = getCategoryById(template.category_id || '')
+            return (
+              <div key={template.template_id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                <div className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center">
+                      <div 
+                        className="w-10 h-10 rounded-lg flex items-center justify-center"
+                        style={{ backgroundColor: (category?.color || '#3B82F6') + '20' }}
+                      >
+                        <FileText 
+                          className="h-5 w-5" 
+                          style={{ color: category?.color || '#3B82F6' }}
+                        />
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-lg font-semibold text-gray-900 line-clamp-1">
+                          {template.name}
+                        </h3>
+                        <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                          template.is_published
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {template.is_published ? 'Published' : 'Draft'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="ml-3">
-                      <h3 className="text-lg font-semibold text-gray-900 line-clamp-1">
-                        {template.name}
-                      </h3>
-                      <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                        template.is_published
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {template.is_published ? 'Published' : 'Draft'}
-                      </span>
+                  </div>
+
+                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                    {template.description || 'No description provided'}
+                  </p>
+
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center text-sm text-gray-500">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Created: {new Date(template.created_at).toLocaleDateString()}
                     </div>
-                  </div>
-                </div>
-
-                <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                  {template.description || 'No description provided'}
-                </p>
-
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Created: {new Date(template.created_at).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <User className="h-4 w-4 mr-2" />
-                    Version: {template.version}
-                  </div>
-                  {template.category && (
+                    <div className="flex items-center text-sm text-gray-500">
+                      <User className="h-4 w-4 mr-2" />
+                      Version: {template.version}
+                    </div>
+                    {category && (
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Category: {category.name}
+                      </div>
+                    )}
                     <div className="flex items-center text-sm text-gray-500">
                       <FileText className="h-4 w-4 mr-2" />
-                      Category: {template.category.name}
+                      Sections: {template.sections?.length || 0}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <div className="flex space-x-2">
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => onEditTemplate?.(template)}
+                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Edit"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDuplicateTemplate(template)}
+                        className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => {}}
+                        className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
+                        title="Preview"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </div>
                     <button
-                      onClick={() => onEditTemplate?.(template)}
-                      className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                      title="Edit"
+                      onClick={() => handleDeleteTemplate(template.template_id, template.name)}
+                      className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                      title="Delete"
                     >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDuplicateTemplate(template)}
-                      className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
-                      title="Duplicate"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {}}
-                      className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
-                      title="Preview"
-                    >
-                      <Eye className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  <button
-                    onClick={() => handleDeleteTemplate(template.id)}
-                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

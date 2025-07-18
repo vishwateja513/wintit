@@ -3,9 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseKey) {
-  console.warn('Missing Supabase environment variables. Using demo mode.')
-}
+console.log('Supabase Config:', { 
+  url: supabaseUrl ? 'Set' : 'Missing', 
+  key: supabaseKey ? 'Set' : 'Missing' 
+})
 
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
   realtime: {
@@ -17,6 +18,37 @@ export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, s
 
 // Demo mode fallback
 const isDemoMode = !supabaseUrl || !supabaseKey
+
+// Types for our database schema
+export interface TemplateCategory {
+  category_id: string
+  name: string
+  description?: string
+  icon?: string
+  color: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface AuditTemplate {
+  template_id: string
+  name: string
+  description?: string
+  category_id?: string
+  version: number
+  sections: any[]
+  conditional_logic: any
+  scoring_rules: any
+  validation_rules: any
+  created_by?: string
+  created_at: string
+  updated_at: string
+  published_at?: string
+  is_published: boolean
+  is_active: boolean
+  category?: TemplateCategory
+}
 
 // Demo data storage
 let demoTemplates: AuditTemplate[] = [
@@ -54,7 +86,7 @@ let demoTemplates: AuditTemplate[] = [
   }
 ]
 
-let demoCategories = [
+let demoCategories: TemplateCategory[] = [
   {
     category_id: 'cat-1',
     name: 'Merchandising',
@@ -67,9 +99,9 @@ let demoCategories = [
   },
   {
     category_id: 'cat-2', 
-    name: 'Stock Management',
-    description: 'Inventory and stock level checks',
-    icon: 'archive',
+    name: 'Quality Control',
+    description: 'Product quality and compliance checks',
+    icon: 'shield-check',
     color: '#10B981',
     sort_order: 2,
     is_active: true,
@@ -77,138 +109,117 @@ let demoCategories = [
   }
 ]
 
-// Types for our database schema
-export interface AuditTemplate {
-  template_id: string
-  name: string
-  description?: string
-  category_id?: string
-  version: number
-  sections: any[]
-  conditional_logic: any
-  scoring_rules: any
-  validation_rules: any
-  created_by?: string
-  created_at: string
-  updated_at: string
-  published_at?: string
-  is_published: boolean
-  is_active: boolean
-}
-
-export interface User {
-  user_id: string
-  name: string
-  email: string
-  role: 'admin' | 'supervisor' | 'auditor'
-  assigned_regions: string[]
-  created_at: string
-  last_login?: string
-}
-
-export interface Template {
-  template_id: string
-  name: string
-  description?: string
-  category?: string
-  sections: Section[]
-  scoring_rules: ScoringRules
-  created_by: string
-  created_at: string
-  updated_at: string
-  is_published: boolean
-}
-
-export interface Section {
-  section_id: string
-  title: string
-  description?: string
-  order_index: number
-  questions: Question[]
-}
-
-export interface Question {
-  question_id: string
-  text: string
-  type: 'text' | 'numeric' | 'single_choice' | 'multiple_choice' | 'dropdown' | 'date' | 'file_upload' | 'barcode'
-  options?: string[]
-  validation?: {
-    mandatory: boolean
-    min_value?: number
-    max_value?: number
-  }
-  conditional_logic?: ConditionalLogic[]
-}
-
-export interface ConditionalLogic {
-  condition: string
-  action: 'show' | 'hide' | 'skip_to'
-  target: string
-}
-
-export interface ScoringRules {
-  weights: Record<string, number>
-  threshold: number
-  critical_questions: string[]
-}
-
-export interface Audit {
-  audit_id: string
-  template_id: string
-  status: 'pending' | 'in_progress' | 'completed'
-  assigned_to: string
-  location: {
-    store_name?: string
-    address?: string
-    coordinates?: { lat: number; lng: number }
-  }
-  responses: Record<string, any>
-  score: number
-  submitted_at?: string
-  created_at: string
-}
-
-export interface Report {
-  report_id: string
-  audit_id: string
-  generated_by: string
-  data: any
-  created_at: string
-}
-
-// Template management functions
-export const saveTemplate = async (templateData: Partial<AuditTemplate>) => {
+// Template Categories CRUD
+export const fetchTemplateCategories = async () => {
   if (isDemoMode) {
-    // Demo mode - store in memory
-    const newTemplate: AuditTemplate = {
-      template_id: templateData.template_id || `demo-${Date.now()}`,
-      name: templateData.name || 'Untitled Template',
-      description: templateData.description || '',
-      category_id: templateData.category_id || '',
-      version: templateData.version || 1,
-      sections: templateData.sections || [],
-      conditional_logic: templateData.conditional_logic || {},
-      scoring_rules: templateData.scoring_rules || {},
-      validation_rules: templateData.validation_rules || {},
-      created_by: 'demo-user',
-      created_at: templateData.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      published_at: templateData.published_at,
-      is_published: templateData.is_published || false,
-      is_active: templateData.is_active !== false
-    }
+    console.log('Demo mode: returning demo categories')
+    return { data: demoCategories, error: null }
+  }
 
-    if (templateData.template_id) {
-      // Update existing
-      const index = demoTemplates.findIndex(t => t.template_id === templateData.template_id)
-      if (index >= 0) {
-        demoTemplates[index] = { ...demoTemplates[index], ...newTemplate }
-        return { data: demoTemplates[index], error: null }
-      }
-    }
+  if (!supabase) {
+    return { data: [], error: new Error('Supabase not initialized') }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('template_categories')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order')
     
-    // Create new
+    console.log('Fetched categories:', data)
+    return { data, error }
+  } catch (error) {
+    console.error('Error fetching categories:', error)
+    return { data: [], error }
+  }
+}
+
+export const createTemplateCategory = async (category: Partial<TemplateCategory>) => {
+  if (isDemoMode) {
+    const newCategory: TemplateCategory = {
+      category_id: `demo-cat-${Date.now()}`,
+      name: category.name || 'New Category',
+      description: category.description || '',
+      icon: category.icon || 'folder',
+      color: category.color || '#3B82F6',
+      sort_order: category.sort_order || demoCategories.length,
+      is_active: true,
+      created_at: new Date().toISOString()
+    }
+    demoCategories.push(newCategory)
+    return { data: newCategory, error: null }
+  }
+
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not initialized') }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('template_categories')
+      .insert(category)
+      .select()
+      .single()
+    
+    console.log('Created category:', data)
+    return { data, error }
+  } catch (error) {
+    console.error('Error creating category:', error)
+    return { data: null, error }
+  }
+}
+
+// Templates CRUD
+export const fetchTemplates = async () => {
+  if (isDemoMode) {
+    console.log('Demo mode: returning demo templates')
+    return { data: demoTemplates, error: null }
+  }
+
+  if (!supabase) {
+    return { data: [], error: new Error('Supabase not initialized') }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('audit_templates')
+      .select(`
+        *,
+        category:template_categories(*)
+      `)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    
+    console.log('Fetched templates:', data)
+    return { data, error }
+  } catch (error) {
+    console.error('Error fetching templates:', error)
+    return { data: [], error }
+  }
+}
+
+export const createTemplate = async (template: Partial<AuditTemplate>) => {
+  if (isDemoMode) {
+    const newTemplate: AuditTemplate = {
+      template_id: `demo-${Date.now()}`,
+      name: template.name || 'Untitled Template',
+      description: template.description || '',
+      category_id: template.category_id || '',
+      version: 1,
+      sections: template.sections || [],
+      conditional_logic: template.conditional_logic || {},
+      scoring_rules: template.scoring_rules || {},
+      validation_rules: template.validation_rules || {},
+      created_by: 'demo-user',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      published_at: template.is_published ? new Date().toISOString() : undefined,
+      is_published: template.is_published || false,
+      is_active: true
+    }
     demoTemplates.unshift(newTemplate)
+    console.log('Created demo template:', newTemplate)
     return { data: newTemplate, error: null }
   }
 
@@ -216,42 +227,47 @@ export const saveTemplate = async (templateData: Partial<AuditTemplate>) => {
     return { data: null, error: new Error('Supabase not initialized') }
   }
 
-  const templateToSave = {
-    ...templateData,
-    created_by: 'demo-user',
-    updated_at: new Date().toISOString()
-  }
+  try {
+    const templateData = {
+      name: template.name,
+      description: template.description,
+      category_id: template.category_id,
+      sections: template.sections || [],
+      conditional_logic: template.conditional_logic || {},
+      scoring_rules: template.scoring_rules || {},
+      validation_rules: template.validation_rules || {},
+      is_published: template.is_published || false,
+      published_at: template.is_published ? new Date().toISOString() : null
+    }
 
-  if (templateData.template_id) {
-    // Update existing template
     const { data, error } = await supabase
       .from('audit_templates')
-      .update(templateToSave)
-      .eq('template_id', templateData.template_id)
-      .select()
+      .insert(templateData)
+      .select(`
+        *,
+        category:template_categories(*)
+      `)
       .single()
     
+    console.log('Created template:', data)
     return { data, error }
-  } else {
-    // Create new template
-    const { data, error } = await supabase
-      .from('audit_templates')
-      .insert(templateToSave)
-      .select()
-      .single()
-    
-    return { data, error }
+  } catch (error) {
+    console.error('Error creating template:', error)
+    return { data: null, error }
   }
 }
 
-export const publishTemplate = async (templateId: string) => {
+export const updateTemplate = async (templateId: string, updates: Partial<AuditTemplate>) => {
   if (isDemoMode) {
-    const template = demoTemplates.find(t => t.template_id === templateId)
-    if (template) {
-      template.is_published = true
-      template.published_at = new Date().toISOString()
-      template.updated_at = new Date().toISOString()
-      return { data: template, error: null }
+    const index = demoTemplates.findIndex(t => t.template_id === templateId)
+    if (index >= 0) {
+      demoTemplates[index] = { 
+        ...demoTemplates[index], 
+        ...updates, 
+        updated_at: new Date().toISOString() 
+      }
+      console.log('Updated demo template:', demoTemplates[index])
+      return { data: demoTemplates[index], error: null }
     }
     return { data: null, error: new Error('Template not found') }
   }
@@ -260,72 +276,78 @@ export const publishTemplate = async (templateId: string) => {
     return { data: null, error: new Error('Supabase not initialized') }
   }
 
-  const { data, error } = await supabase
-    .from('audit_templates')
-    .update({
-      is_published: true,
-      published_at: new Date().toISOString(),
+  try {
+    const updateData = {
+      ...updates,
       updated_at: new Date().toISOString()
-    })
-    .eq('template_id', templateId)
-    .select()
-    .single()
-  
-  return { data, error }
+    }
+
+    const { data, error } = await supabase
+      .from('audit_templates')
+      .update(updateData)
+      .eq('template_id', templateId)
+      .select(`
+        *,
+        category:template_categories(*)
+      `)
+      .single()
+    
+    console.log('Updated template:', data)
+    return { data, error }
+  } catch (error) {
+    console.error('Error updating template:', error)
+    return { data: null, error }
+  }
 }
 
-export const fetchTemplateCategories = async () => {
+export const deleteTemplate = async (templateId: string) => {
   if (isDemoMode) {
-    return { data: demoCategories, error: null }
+    const index = demoTemplates.findIndex(t => t.template_id === templateId)
+    if (index >= 0) {
+      demoTemplates.splice(index, 1)
+      console.log('Deleted demo template:', templateId)
+      return { error: null }
+    }
+    return { error: new Error('Template not found') }
   }
 
   if (!supabase) {
-    return { data: [], error: new Error('Supabase not initialized') }
+    return { error: new Error('Supabase not initialized') }
   }
 
-  const { data, error } = await supabase
-    .from('template_categories')
-    .select('*')
-    .eq('is_active', true)
-    .order('sort_order')
-  
-  return { data, error }
+  try {
+    const { error } = await supabase
+      .from('audit_templates')
+      .delete()
+      .eq('template_id', templateId)
+    
+    console.log('Deleted template:', templateId)
+    return { error }
+  } catch (error) {
+    console.error('Error deleting template:', error)
+    return { error }
+  }
 }
 
-export const fetchTemplates = async () => {
-  if (isDemoMode) {
-    return { data: demoTemplates, error: null }
+export const publishTemplate = async (templateId: string) => {
+  const updates = {
+    is_published: true,
+    published_at: new Date().toISOString()
   }
-
-  if (!supabase) {
-    return { data: [], error: new Error('Supabase not initialized') }
-  }
-
-  const { data, error } = await supabase
-    .from('audit_templates')
-    .select(`
-      *,
-      template_categories (
-        name,
-        icon,
-        color
-      )
-    `)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
   
-  return { data, error }
+  return updateTemplate(templateId, updates)
 }
 
-// Real-time template functions with subscriptions
+// Real-time subscriptions
 export const subscribeToTemplates = (callback: (payload: any) => void) => {
   if (isDemoMode || !supabase) {
-    // Return a mock subscription for demo mode
+    console.log('Demo mode: mock subscription')
     return {
-      unsubscribe: () => {}
+      unsubscribe: () => console.log('Unsubscribed from demo templates')
     }
   }
 
+  console.log('Setting up real-time subscription for templates')
   return supabase
     .channel('templates')
     .on('postgres_changes', 
@@ -334,18 +356,23 @@ export const subscribeToTemplates = (callback: (payload: any) => void) => {
         schema: 'public', 
         table: 'audit_templates' 
       }, 
-      callback
+      (payload) => {
+        console.log('Real-time template update:', payload)
+        callback(payload)
+      }
     )
     .subscribe()
 }
 
 export const subscribeToTemplateCategories = (callback: (payload: any) => void) => {
   if (isDemoMode || !supabase) {
+    console.log('Demo mode: mock subscription')
     return {
-      unsubscribe: () => {}
+      unsubscribe: () => console.log('Unsubscribed from demo categories')
     }
   }
 
+  console.log('Setting up real-time subscription for categories')
   return supabase
     .channel('template_categories')
     .on('postgres_changes', 
@@ -354,106 +381,18 @@ export const subscribeToTemplateCategories = (callback: (payload: any) => void) 
         schema: 'public', 
         table: 'template_categories' 
       }, 
-      callback
+      (payload) => {
+        console.log('Real-time category update:', payload)
+        callback(payload)
+      }
     )
     .subscribe()
-}
-
-// Enhanced template functions
-export const fetchTemplatesWithRealtime = async () => {
-  const { data, error } = await supabase
-    .from('audit_templates')
-    .select(`
-      *,
-      template_categories (
-        name,
-        icon,
-        color
-      ),
-      user_profiles!audit_templates_created_by_fkey (
-        name
-      )
-    `)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-  
-  return { data, error }
-}
-
-export const saveTemplateWithRealtime = async (templateData: Partial<AuditTemplate>) => {
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    throw new Error('User not authenticated')
-  }
-
-  const templateToSave = {
-    ...templateData,
-    created_by: user.id,
-    updated_at: new Date().toISOString()
-  }
-
-  if (templateData.template_id) {
-    // Update existing template
-    const { data, error } = await supabase
-      .from('audit_templates')
-      .update(templateToSave)
-      .eq('template_id', templateData.template_id)
-      .select(`
-        *,
-        template_categories (
-          name,
-          icon,
-          color
-        )
-      `)
-      .single()
-    
-    return { data, error }
-  } else {
-    // Create new template
-    const { data, error } = await supabase
-      .from('audit_templates')
-      .insert(templateToSave)
-      .select(`
-        *,
-        template_categories (
-          name,
-          icon,
-          color
-        )
-      `)
-      .single()
-    
-    return { data, error }
-  }
-}
-
-export const publishTemplateWithRealtime = async (templateId: string) => {
-  const { data, error } = await supabase
-    .from('audit_templates')
-    .update({
-      is_published: true,
-      published_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    })
-    .eq('template_id', templateId)
-    .select(`
-      *,
-      template_categories (
-        name,
-        icon,
-        color
-      )
-    `)
-    .single()
-  
-  return { data, error }
 }
 
 // Connection test function
 export const testSupabaseConnection = async () => {
   if (isDemoMode || !supabase) {
+    console.log('Demo mode - no Supabase connection')
     return { connected: false, error: new Error('Demo mode - no Supabase connection') }
   }
 
@@ -464,8 +403,10 @@ export const testSupabaseConnection = async () => {
       .limit(1)
     
     if (error) throw error
+    console.log('Supabase connection successful')
     return { connected: true, error: null }
   } catch (error) {
+    console.error('Supabase connection failed:', error)
     return { connected: false, error }
   }
 }
