@@ -1,16 +1,34 @@
 import React, { useState } from 'react'
+import { AuthProvider, useAuth } from './components/auth/AuthProvider'
+import LoginForm from './components/auth/LoginForm'
 import Layout from './components/common/Layout'
 import Dashboard from './components/dashboard/Dashboard'
 import TemplatesList from './components/templates/TemplatesList'
 import TemplateWizard from './components/templates/TemplateWizard'
 import AuditsList from './components/audits/AuditsList'
 import ReportsView from './components/reports/ReportsView'
-import { Template } from './lib/templates'
+import { AuditTemplate } from './lib/supabase'
 
-function App() {
+const AppContent: React.FC = () => {
+  const { user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showTemplateWizard, setShowTemplateWizard] = useState(false)
-  const [editingTemplate, setEditingTemplate] = useState<Template | undefined>(undefined)
+  const [editingTemplate, setEditingTemplate] = useState<AuditTemplate | undefined>(undefined)
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginForm />
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -24,7 +42,6 @@ function App() {
             setShowTemplateWizard(true)
           }}
           onTemplateUpdated={() => {
-            // Refresh templates list if needed
             setActiveTab('templates')
           }}
         />
@@ -34,8 +51,8 @@ function App() {
         return <ReportsView />
       case 'users':
         return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
+          <div className="p-4 lg:p-6">
+            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">User Management</h2>
             <p className="text-gray-600 mt-1">Manage users and permissions</p>
             <div className="mt-8 text-center">
               <p className="text-gray-500">User management module coming soon...</p>
@@ -44,8 +61,8 @@ function App() {
         )
       case 'settings':
         return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
+          <div className="p-4 lg:p-6">
+            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Settings</h2>
             <p className="text-gray-600 mt-1">Configure your application settings</p>
             <div className="mt-8 text-center">
               <p className="text-gray-500">Settings module coming soon...</p>
@@ -70,12 +87,19 @@ function App() {
           onTemplateCreated={(template) => {
             setShowTemplateWizard(false)
             setEditingTemplate(undefined)
-            // Optionally refresh the templates list
             setActiveTab('templates')
           }}
         />
       )}
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
 

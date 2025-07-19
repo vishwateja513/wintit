@@ -208,35 +208,35 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">
+              <h2 className="text-lg lg:text-2xl font-bold">
                 {template ? 'Edit Template' : 'Create Template'}
               </h2>
-              <p className="text-blue-100 mt-1">
+              <p className="text-blue-100 mt-1 text-sm lg:text-base">
                 Step {currentStep} of 4: {steps[currentStep - 1].subtitle}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-white hover:text-gray-200 transition-colors"
+              className="text-white hover:text-gray-200 transition-colors p-1"
             >
-              <X className="h-6 w-6" />
+              <X className="h-5 w-5 lg:h-6 lg:w-6" />
             </button>
           </div>
         </div>
 
         {/* Progress Bar */}
-        <div className="bg-gray-50 px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-gray-50 px-4 lg:px-6 py-3 lg:py-4">
+          <div className="flex items-center justify-between overflow-x-auto">
             {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
+              <div key={step.id} className="flex items-center flex-shrink-0">
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  className={`w-6 h-6 lg:w-8 lg:h-8 rounded-full flex items-center justify-center text-xs lg:text-sm font-medium ${
                     currentStep >= step.id
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-200 text-gray-600'
@@ -244,15 +244,15 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
                 >
                   {step.id}
                 </div>
-                <div className="ml-3 hidden sm:block">
-                  <p className={`text-sm font-medium ${
+                <div className="ml-2 lg:ml-3 hidden lg:block">
+                  <p className={`text-xs lg:text-sm font-medium ${
                     currentStep >= step.id ? 'text-blue-600' : 'text-gray-500'
                   }`}>
                     {step.title}
                   </p>
                 </div>
                 {index < steps.length - 1 && (
-                  <div className={`w-12 h-0.5 ml-4 ${
+                  <div className={`w-8 lg:w-12 h-0.5 ml-2 lg:ml-4 ${
                     currentStep > step.id ? 'bg-blue-600' : 'bg-gray-200'
                   }`} />
                 )}
@@ -262,16 +262,16 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+        <div className="p-4 lg:p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           {renderStepContent()}
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t">
-          <div className="flex items-center space-x-3">
+        <div className="bg-gray-50 px-4 lg:px-6 py-3 lg:py-4 flex flex-col lg:flex-row items-center justify-between border-t space-y-3 lg:space-y-0">
+          <div className="flex items-center space-x-2 lg:space-x-3 w-full lg:w-auto">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              className="flex-1 lg:flex-none px-3 lg:px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors text-sm lg:text-base"
               disabled={isLoading}
             >
               Cancel
@@ -279,17 +279,17 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
             <button 
               onClick={handleSaveDraft}
               disabled={isLoading}
-              className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center"
+              className="flex-1 lg:flex-none px-3 lg:px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center text-sm lg:text-base"
             >
               <Save className="h-4 w-4 mr-2" />
               {isLoading ? 'Saving...' : 'Save Draft'}
             </button>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 lg:space-x-3 w-full lg:w-auto">
             <button
               onClick={handlePrevious}
               disabled={currentStep === 1}
-              className={`px-4 py-2 border border-gray-300 rounded-md transition-colors flex items-center ${
+              className={`flex-1 lg:flex-none px-3 lg:px-4 py-2 border border-gray-300 rounded-md transition-colors flex items-center justify-center text-sm lg:text-base ${
                 currentStep === 1
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                   : 'text-gray-700 bg-white hover:bg-gray-50'
@@ -301,7 +301,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
             <button
               onClick={handleNext}
               disabled={currentStep === 4}
-              className={`px-4 py-2 rounded-md transition-colors flex items-center ${
+              className={`flex-1 lg:flex-none px-3 lg:px-4 py-2 rounded-md transition-colors flex items-center justify-center text-sm lg:text-base ${
                 currentStep === 4 || isLoading
                   ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
                   : 'text-white bg-blue-600 hover:bg-blue-700'
