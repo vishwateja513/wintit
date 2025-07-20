@@ -13,8 +13,6 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { useAuth } from '../auth/AuthProvider';
-
 interface LayoutProps {
   children: React.ReactNode;
 }
@@ -26,11 +24,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
 
   const navigationItems = [
-    { name: 'Dashboard', href: '/', icon: Home },
-    { name: 'Templates', href: '/templates', icon: FileText },
-    { name: 'Audits', href: '/audits', icon: BarChart3 },
-    { name: 'Reports', href: '/reports', icon: BarChart3 },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Dashboard', href: '/', icon: Home, id: 'dashboard' },
+    { name: 'Templates', href: '/templates', icon: FileText, id: 'templates' },
+    { name: 'Audits', href: '/audits', icon: BarChart3, id: 'audits' },
+    { name: 'Reports', href: '/reports', icon: BarChart3, id: 'reports' },
+    { name: 'Users', href: '/users', icon: User, id: 'users' },
+    { name: 'Settings', href: '/settings', icon: Settings, id: 'settings' },
   ];
 
   const handleNavigation = (href: string) => {

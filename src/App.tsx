@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/auth/AuthProvider'
 import LoginForm from './components/auth/LoginForm'
 import Layout from './components/common/Layout'
@@ -11,7 +12,6 @@ import { AuditTemplate } from './lib/supabase'
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth()
-  const [activeTab, setActiveTab] = useState('dashboard')
   const [showTemplateWizard, setShowTemplateWizard] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<AuditTemplate | undefined>(undefined)
 
@@ -30,68 +30,63 @@ const AppContent: React.FC = () => {
     return <LoginForm />
   }
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard />
-      case 'templates':
-        return <TemplatesList 
-          onCreateTemplate={() => setShowTemplateWizard(true)} 
-          onEditTemplate={(template) => {
-            setEditingTemplate(template)
-            setShowTemplateWizard(true)
-          }}
-          onTemplateUpdated={() => {
-            setActiveTab('templates')
-          }}
-        />
-      case 'audits':
-        return <AuditsList />
-      case 'reports':
-        return <ReportsView />
-      case 'users':
-        return (
-          <div className="p-4 lg:p-6">
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">User Management</h2>
-            <p className="text-gray-600 mt-1">Manage users and permissions</p>
-            <div className="mt-8 text-center">
-              <p className="text-gray-500">User management module coming soon...</p>
-            </div>
-          </div>
-        )
-      case 'settings':
-        return (
-          <div className="p-4 lg:p-6">
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Settings</h2>
-            <p className="text-gray-600 mt-1">Configure your application settings</p>
-            <div className="mt-8 text-center">
-              <p className="text-gray-500">Settings module coming soon...</p>
-            </div>
-          </div>
-        )
-      default:
-        return <Dashboard />
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-        {renderContent()}
-      </Layout>
-      
-      {showTemplateWizard && (
-        <TemplateWizard 
-          onClose={() => setShowTemplateWizard(false)}
-          template={editingTemplate}
-          onTemplateCreated={(template) => {
-            setShowTemplateWizard(false)
-            setEditingTemplate(undefined)
-            setActiveTab('templates')
-          }}
-        />
-      )}
-    </div>
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/templates" element={
+              <TemplatesList 
+                onCreateTemplate={() => setShowTemplateWizard(true)} 
+                onEditTemplate={(template) => {
+                  setEditingTemplate(template)
+                  setShowTemplateWizard(true)
+                }}
+                onTemplateUpdated={() => {
+                  // Template updated, refresh will happen automatically
+                }}
+              />
+            } />
+            <Route path="/audits" element={<AuditsList />} />
+            <Route path="/reports" element={<ReportsView />} />
+            <Route path="/users" element={
+              <div className="p-4 lg:p-6">
+                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">User Management</h2>
+                <p className="text-gray-600 mt-1">Manage users and permissions</p>
+                <div className="mt-8 text-center">
+                  <p className="text-gray-500">User management module coming soon...</p>
+                </div>
+              </div>
+            } />
+            <Route path="/settings" element={
+              <div className="p-4 lg:p-6">
+                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Settings</h2>
+                <p className="text-gray-600 mt-1">Configure your application settings</p>
+                <div className="mt-8 text-center">
+                  <p className="text-gray-500">Settings module coming soon...</p>
+                </div>
+              </div>
+            } />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+        
+        {showTemplateWizard && (
+          <TemplateWizard 
+            onClose={() => {
+              setShowTemplateWizard(false)
+              setEditingTemplate(undefined)
+            }}
+            template={editingTemplate}
+            onTemplateCreated={(template) => {
+              setShowTemplateWizard(false)
+              setEditingTemplate(undefined)
+            }}
+          />
+        )}
+      </div>
+    </Router>
   )
 }
 
