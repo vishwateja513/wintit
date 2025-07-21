@@ -96,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { error: null }
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -105,6 +105,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       },
     })
+    
+    // If signup was successful and user was created, create user profile
+    if (!error && data.user) {
+      try {
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .insert({
+            user_id: data.user.id,
+            name: name,
+            role: 'auditor'
+          })
+        
+        if (profileError) {
+          console.error('Error creating user profile:', profileError)
+          // Don't return this error as the user was successfully created
+          // The profile will be created by the database trigger if it exists
+        }
+      } catch (profileError) {
+        console.error('Error creating user profile:', profileError)
+        // Don't return this error as the user was successfully created
+      }
+    }
+    
     return { error }
   }
 
