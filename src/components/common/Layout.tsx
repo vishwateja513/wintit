@@ -53,7 +53,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {sidebarOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setSidebarOpen(true)}
         />
       )}
 
