@@ -117,7 +117,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
 
       if (result.error) {
         console.error('Error saving template:', result.error)
-        alert('Failed to save template. Please try again.')
+        alert(`Failed to save template: ${result.error.message}`)
       } else if (result.data) {
         onTemplateCreated?.(result.data)
         alert('Template saved as draft successfully!')
@@ -163,7 +163,7 @@ const TemplateWizard: React.FC<TemplateWizardProps> = ({
 
       if (result.error) {
         console.error('Error publishing template:', result.error)
-        alert('Failed to publish template. Please try again.')
+        alert(`Failed to publish template: ${result.error.message}`)
       } else if (result.data) {
         onTemplateCreated?.(result.data)
         alert('Template published successfully!')

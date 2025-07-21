@@ -103,7 +103,7 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
       const { error } = await deleteTemplate(templateId)
       if (error) {
         console.error('Error deleting template:', error)
-        alert('Failed to delete template. Please try again.')
+        alert(`Failed to delete template: ${error.message}`)
       } else {
         // Remove from local state immediately for better UX
         setTemplates(prev => prev.filter(t => t.template_id !== templateId))
@@ -130,7 +130,7 @@ const TemplatesList: React.FC<TemplatesListProps> = ({
       
       if (error) {
         console.error('Error duplicating template:', error)
-        alert('Failed to duplicate template. Please try again.')
+        alert(`Failed to duplicate template: ${error.message}`)
       } else if (data) {
         // Add to local state immediately for better UX
         setTemplates(prev => [data, ...prev])

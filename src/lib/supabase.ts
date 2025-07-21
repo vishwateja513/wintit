@@ -50,6 +50,22 @@ export interface AuditTemplate {
   category?: TemplateCategory
 }
 
+export interface Audit {
+  audit_id: string
+  template_id: string
+  status: 'pending' | 'in_progress' | 'completed'
+  assigned_to: string
+  location: {
+    store_name?: string
+    address?: string
+    coordinates?: { lat: number; lng: number }
+  }
+  responses: Record<string, any>
+  score: number
+  submitted_at?: string
+  created_at: string
+}
+
 // Demo data storage
 let demoTemplates: AuditTemplate[] = [
   {
@@ -228,6 +244,9 @@ export const createTemplate = async (template: Partial<AuditTemplate>) => {
   }
 
   try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser()
+    
     const templateData = {
       name: template.name,
       description: template.description,
@@ -237,7 +256,8 @@ export const createTemplate = async (template: Partial<AuditTemplate>) => {
       scoring_rules: template.scoring_rules || {},
       validation_rules: template.validation_rules || {},
       is_published: template.is_published || false,
-      published_at: template.is_published ? new Date().toISOString() : null
+      published_at: template.is_published ? new Date().toISOString() : null,
+      created_by: user?.id
     }
 
     const { data, error } = await supabase
@@ -282,6 +302,9 @@ export const updateTemplate = async (templateId: string, updates: Partial<AuditT
       updated_at: new Date().toISOString()
     }
 
+    // Remove template_id from updates to avoid conflicts
+    delete updateData.template_id
+
     const { data, error } = await supabase
       .from('audit_templates')
       .update(updateData)
@@ -316,9 +339,10 @@ export const deleteTemplate = async (templateId: string) => {
   }
 
   try {
+    // Soft delete by setting is_active to false
     const { error } = await supabase
       .from('audit_templates')
-      .delete()
+      .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('template_id', templateId)
     
     console.log('Deleted template:', templateId)

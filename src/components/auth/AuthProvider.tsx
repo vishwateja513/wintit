@@ -27,11 +27,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!supabase) {
+      // Demo mode - create a mock user
+      const mockUser = {
+        id: 'demo-user',
+        email: 'demo@example.com',
+        user_metadata: { name: 'Demo User' }
+      } as User
+      setUser(mockUser)
+      setLoading(false)
+      return
+    }
+
     // Get initial session
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      setUser(session?.user ?? null)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        setSession(session)
+        setUser(session?.user ?? null)
+      } catch (error) {
+        console.error('Error getting session:', error)
+      }
       setLoading(false)
     }
 
@@ -50,6 +66,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   const signIn = async (email: string, password: string) => {
+    if (!supabase) {
+      // Demo mode - simulate successful login
+      const mockUser = {
+        id: 'demo-user',
+        email: email,
+        user_metadata: { name: 'Demo User' }
+      } as User
+      setUser(mockUser)
+      return { error: null }
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -58,6 +85,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const signUp = async (email: string, password: string, name: string) => {
+    if (!supabase) {
+      // Demo mode - simulate successful signup
+      const mockUser = {
+        id: 'demo-user',
+        email: email,
+        user_metadata: { name: name }
+      } as User
+      setUser(mockUser)
+      return { error: null }
+    }
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -71,6 +109,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const signOut = async () => {
+    if (!supabase) {
+      // Demo mode - simulate logout
+      setUser(null)
+      setSession(null)
+      return
+    }
+
     await supabase.auth.signOut()
   }
 
