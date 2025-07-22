@@ -115,11 +115,51 @@ let demoCategories: TemplateCategory[] = [
   },
   {
     category_id: 'cat-2', 
+    name: 'Stock Management',
+    description: 'Inventory and stock level checks',
+    icon: 'archive',
+    color: '#10B981',
+    sort_order: 2,
+    is_active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    category_id: 'cat-3',
     name: 'Quality Control',
     description: 'Product quality and compliance checks',
     icon: 'shield-check',
-    color: '#10B981',
-    sort_order: 2,
+    color: '#F59E0B',
+    sort_order: 3,
+    is_active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    category_id: 'cat-4',
+    name: 'Competitor Analysis',
+    description: 'Competitive landscape assessment',
+    icon: 'users',
+    color: '#8B5CF6',
+    sort_order: 4,
+    is_active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    category_id: 'cat-5',
+    name: 'Pricing Compliance',
+    description: 'Price verification and compliance',
+    icon: 'dollar-sign',
+    color: '#EF4444',
+    sort_order: 5,
+    is_active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    category_id: 'cat-6',
+    name: 'Brand Visibility',
+    description: 'Brand presence and POSM audits',
+    icon: 'eye',
+    color: '#06B6D4',
+    sort_order: 6,
     is_active: true,
     created_at: new Date().toISOString()
   }
