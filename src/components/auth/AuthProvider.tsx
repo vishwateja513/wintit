@@ -67,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) {
+      console.error('Supabase client not initialized. Check environment variables.')
       // Demo mode - simulate successful login
       const mockUser = {
         id: 'demo-user',
@@ -77,11 +78,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { error: null }
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    return { error }
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      return { error }
+    } catch (error) {
+      console.error('Supabase connection error:', error)
+      return { 
+        error: { 
+          message: 'Failed to connect to authentication service. Please check your internet connection and try again.' 
+        } 
+      }
+    }
   }
 
   const signUp = async (email: string, password: string, name: string) => {
