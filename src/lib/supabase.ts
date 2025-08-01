@@ -8,6 +8,14 @@ console.log('Supabase Config:', {
   key: supabaseKey ? 'Set' : 'Missing' 
 })
 
+// Check if environment variables are properly set
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Missing Supabase environment variables:')
+  console.error('VITE_SUPABASE_URL:', supabaseUrl ? 'Set' : 'Missing')
+  console.error('VITE_SUPABASE_ANON_KEY:', supabaseKey ? 'Set' : 'Missing')
+  console.error('Please check your .env file and ensure both variables are set correctly.')
+}
+
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
   realtime: {
     params: {
