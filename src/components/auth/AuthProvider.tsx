@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  connectionError: string | null
   signIn: (email: string, password: string) => Promise<{ error?: any }>
   signUp: (email: string, password: string, name: string) => Promise<{ error?: any }>
   signOut: () => Promise<void>
@@ -25,16 +26,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!supabase) {
-      // Demo mode - create a mock user
-      const mockUser = {
-        id: 'demo-user',
-        email: 'demo@example.com',
-        user_metadata: { name: 'Demo User' }
-      } as User
-      setUser(mockUser)
+      // Supabase not configured - show connection error
+      setConnectionError('Supabase configuration missing. Please check your environment variables.')
       setLoading(false)
       return
     }
@@ -45,8 +42,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession()
         setSession(session)
         setUser(session?.user ?? null)
+        setConnectionError(null)
       } catch (error) {
-        console.error('Error getting session:', error)
+        console.error('Error connecting to Supabase:', error)
+        setConnectionError('Failed to connect to authentication service. Please check your Supabase configuration.')
       }
       setLoading(false)
     }
@@ -59,6 +58,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session)
         setUser(session?.user ?? null)
         setLoading(false)
+        if (session) {
+          setConnectionError(null)
+        }
       }
     )
 
@@ -67,15 +69,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) {
-      console.error('Supabase client not initialized. Check environment variables.')
-      // Demo mode - simulate successful login
-      const mockUser = {
-        id: 'demo-user',
-        email: email,
-        user_metadata: { name: 'Demo User' }
-      } as User
-      setUser(mockUser)
-      return { error: null }
+      return { 
+        error: { 
+          message: 'Supabase is not configured. Please check your environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
+        } 
+      }
     }
 
     try {
@@ -83,12 +81,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password,
       })
+      
+      if (!error) {
+        setConnectionError(null)
+      }
+      
       return { error }
     } catch (error) {
       console.error('Supabase connection error:', error)
+      setConnectionError('Failed to connect to authentication service.')
       return { 
         error: { 
-          message: 'Failed to connect to authentication service. Please check your internet connection and try again.' 
+          message: 'Failed to connect to authentication service. Please check your Supabase configuration and internet connection.' 
         } 
       }
     }
@@ -96,66 +100,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUp = async (email: string, password: string, name: string) => {
     if (!supabase) {
-      // Demo mode - simulate successful signup
-      const mockUser = {
-        id: 'demo-user',
-        email: email,
-        user_metadata: { name: name }
-      } as User
-      setUser(mockUser)
-      return { error: null }
-    }
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name,
-        },
-      },
-    })
-    
-    // If signup was successful and user was created, create user profile
-    if (!error && data.user) {
-      try {
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .insert({
-            user_id: data.user.id,
-            name: name,
-            role: 'auditor'
-          })
-        
-        if (profileError) {
-          console.error('Error creating user profile:', profileError)
-          // Don't return this error as the user was successfully created
-          // The profile will be created by the database trigger if it exists
-        }
-      } catch (profileError) {
-        console.error('Error creating user profile:', profileError)
-        // Don't return this error as the user was successfully created
+      return { 
+        error: { 
+          message: 'Supabase is not configured. Please check your environment variables.' 
+        } 
       }
     }
-    
-    return { error }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+          },
+        },
+      })
+      
+      // If signup was successful and user was created, create user profile
+      if (!error && data.user) {
+        try {
+          const { error: profileError } = await supabase
+            .from('user_profiles')
+            .insert({
+              user_id: data.user.id,
+              name: name,
+              role: 'auditor'
+            })
+          
+          if (profileError) {
+            console.error('Error creating user profile:', profileError)
+            // Don't return this error as the user was successfully created
+            // The profile will be created by the database trigger if it exists
+          }
+        } catch (profileError) {
+          console.error('Error creating user profile:', profileError)
+          // Don't return this error as the user was successfully created
+        }
+      }
+      
+      if (!error) {
+        setConnectionError(null)
+      }
+      
+      return { error }
+    } catch (error) {
+      console.error('Supabase connection error during signup:', error)
+      setConnectionError('Failed to connect to authentication service.')
+      return { 
+        error: { 
+          message: 'Failed to connect to authentication service. Please check your Supabase configuration and internet connection.' 
+        } 
+      }
+    }
   }
 
   const signOut = async () => {
     if (!supabase) {
-      // Demo mode - simulate logout
       setUser(null)
       setSession(null)
       return
     }
 
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+      setConnectionError(null)
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
   }
 
   const value = {
     user,
     session,
     loading,
+    connectionError,
     signIn,
     signUp,
     signOut,

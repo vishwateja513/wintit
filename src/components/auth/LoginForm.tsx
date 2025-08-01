@@ -11,7 +11,7 @@ const LoginForm: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, connectionError } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,6 +63,31 @@ const LoginForm: React.FC = () => {
               {isSignUp ? 'Sign up to get started' : 'Sign in to your account'}
             </p>
           </div>
+
+          {connectionError && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Configuration Error</h3>
+                  <p className="text-sm text-red-700 mt-1">{connectionError}</p>
+                  <div className="mt-2 text-xs text-red-600">
+                    <p>To fix this issue:</p>
+                    <ol className="list-decimal list-inside mt-1 space-y-1">
+                      <li>Create a <code className="bg-red-100 px-1 rounded">.env</code> file in your project root</li>
+                      <li>Add your Supabase URL: <code className="bg-red-100 px-1 rounded">VITE_SUPABASE_URL=your_url</code></li>
+                      <li>Add your Supabase anon key: <code className="bg-red-100 px-1 rounded">VITE_SUPABASE_ANON_KEY=your_key</code></li>
+                      <li>Restart your development server</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -133,7 +158,7 @@ const LoginForm: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !!connectionError}
               className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
             >
               {loading ? (
@@ -166,12 +191,13 @@ const LoginForm: React.FC = () => {
           </div>
         </div>
 
-        {/* Demo Info */}
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">
-            Demo credentials: admin@example.com / password123
-          </p>
-        </div>
+        {!connectionError && (
+          <div className="mt-6 text-center">
+            <p className="text-xs text-gray-500">
+              Need help? Check the .env.example file for configuration instructions
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
